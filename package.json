@@ -1,0 +1,14 @@
+{
+  "name": "yattakai-task-checker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "自分で決めたタスクの完了状況をチェックする CLI",
+  "bin": {
+    "yattakai": "./src/cli.mjs"
+  },
+  "scripts": {
+    "start": "node src/cli.mjs",
+    "check": "node src/cli.mjs check"
+  }
+}

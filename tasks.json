@@ -1,0 +1,9 @@
+{
+  "tasks": [
+    {
+      "id": "sample-1",
+      "title": "サンプル: 終わったら done にする",
+      "done": false
+    }
+  ]
+}
