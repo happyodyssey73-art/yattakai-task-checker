@@ -1,0 +1,4 @@
+category_id,display_name,color,sort_order,active
+health,健康・運動,#3388ff,1,TRUE
+study,勉強,#f59e0b,2,TRUE
+money_work,お金・仕事,#14b8a6,3,TRUE

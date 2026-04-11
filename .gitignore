@@ -1,1 +1,4 @@
 node_modules/
+
+# clasp: scriptId をリモートに載せない（各 PC の gas/.clasp.json はローカルのみ）
+gas/.clasp.json

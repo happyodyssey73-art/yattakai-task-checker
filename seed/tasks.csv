@@ -1,0 +1,5 @@
+task_id,title,display_short,category_id,active,sort_order
+t_001,筋トレ20分,筋トレ,health,TRUE,10
+t_002,AIスクールの勉強30分,AIスクール,study,TRUE,20
+t_003,株のチェック（セクター・国）,株チェック,money_work,TRUE,30
+t_004,スマートノート・WOOP・0秒思考,ノート,study,TRUE,40
