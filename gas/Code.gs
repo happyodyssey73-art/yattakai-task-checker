@@ -528,7 +528,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '.qa{font-size:11px;color:#94A3B8;margin:0 0 10px;}',
     '.ch{display:flex;align-items:flex-start;gap:10px;margin:10px 0;}',
     '.ch.r{flex-direction:row-reverse;}',
-    '.av{width:64px;height:64px;border-radius:50%;object-fit:cover;flex-shrink:0;background:#F1F5F9;}',
+    '.av{width:64px;height:64px;min-width:64px;border-radius:50%;overflow:hidden;flex-shrink:0;background:#E2E8F0;}',
     '.bubble{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:8px 12px;font-size:13px;color:#334155;line-height:1.6;flex:1;}',
     '.ch.r .bubble{background:#EFF6FF;border-color:#BFDBFE;}',
     '.cn{font-size:10px;font-weight:700;color:#94A3B8;margin:0 0 2px;letter-spacing:.04em;}',
@@ -611,7 +611,15 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     // mkChar: name, text, imgFile, isRight
     '  function mkChar(name,text,imgFile,isRight){',
     '    var row=document.createElement("div");row.className="ch"+(isRight?" r":"");',
-    '    if(AV&&imgFile){var img=document.createElement("img");img.className="av";img.src=AV+"/"+imgFile;img.alt=name;img.onerror=function(){this.style.display="none";};row.appendChild(img);}',
+    '    var avEl=document.createElement("div");avEl.className="av";',
+    '    if(AV&&imgFile){',
+    '      var img=document.createElement("img");',
+    '      img.style.cssText="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;";',
+    '      img.src=AV+"/"+imgFile;img.alt=name;',
+    '      img.onerror=function(){this.style.display="none";};',
+    '      avEl.appendChild(img);',
+    '    }',
+    '    row.appendChild(avEl);',
     '    var bub=document.createElement("div");bub.className="bubble";',
     '    var cn=document.createElement("p");cn.className="cn";cn.textContent=name;',
     '    var tx=document.createElement("p");tx.style.margin="0";tx.textContent=text;',
@@ -686,8 +694,8 @@ function buildSection2_(ss, todayStr, achievementPercent, moodMessage) {
     mood_message: moodMessage,
     attribution: attribution,
   };
-  var ichisanTpl = '{{mood_message}} の {{achievement_percent}}％。『{{quote}}』…イチ、今日はここまで！';
-  var hirokoTpl = '達成率 {{achievement_percent}}％ね。「{{quote}}」…{{mood_message}}、明日も一歩でいこ。';
+  var ichisanTpl = '達成率{{achievement_percent}}％か…「{{quote}}」という言葉を胸に刻んでおくんじゃ、ヒロ子ちゃん。';
+  var hirokoTpl = '達成率{{achievement_percent}}%！「{{quote}}」か〜、マジ刺さるじゃん。明日もあたし頑張るっしょ！';
   var dto = {
     quote: quoteText,
     quote_attribution: attribution,
@@ -745,9 +753,17 @@ function callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribu
 
   var quoteRef = '「' + quoteText + '」' + (attribution ? '（' + attribution + '）' : '');
   var prompt = [
-    'あなたはキャラクター対話の生成AIです。以下の口調ルールを厳守してセリフを書いてください。',
+    'あなたはキャラクター対話の生成AIです。以下の口調ルールを一字一句厳守してセリフを書いてください。',
+    '口調ルールに違反したセリフは絶対に出力しないでください。',
     '',
     CHAR_VOICE_RULES_,
+    '',
+    '▼ イチさんの口調 NG 例（絶対に使わない）:',
+    '  NG: 「焦らず、まずは一歩踏み出すことが大切だよ」→ 「だよ」禁止',
+    '  NG: 「まずは一歩を踏み出しましょう」→ 丁寧語禁止',
+    '  NG: 「今日はここまでにしよう」→ 一人称「ワシ」なし・語尾不正',
+    '  OK: 「焦りは禁物じゃ。まず一歩、踏み出すんじゃよ、ヒロ子ちゃん」',
+    '  OK: 「ワシの経験上、こういうときこそ守りを固めるんじゃ」',
     '',
     '今日の状況（これだけを使うこと・個人情報は含まない）:',
     '  達成率: ' + achievementPercent + '%',
@@ -757,9 +773,10 @@ function callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribu
     'ルール:',
     '  - 各セリフは 1〜2 文（短め・簡潔に）',
     '  - 個人のタスク名・プライベート情報は出力しない',
+    '  - イチさんは必ず「ワシ」を使い、語尾は必ず「〜じゃ／〜じゃな／〜のじゃ」で終わること',
     '',
     '必ず次の JSON のみ返してください（コードブロック・前後の説明文は不要）:',
-    '{"quote":"参考にした名言の原文","ichisan":"イチさんのセリフ","hiroko":"ヒロ子のセリフ"}',
+    '{"quote":"参考にした名言の原文","ichisan":"（必ず ワシ + 〜じゃ語尾）","hiroko":"（必ず あたし + ギャル語）"}',
   ].join('\n');
 
   var url =
