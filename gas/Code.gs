@@ -4,6 +4,8 @@
  * スクリプト プロパティ:
  *   LINE_CHANNEL_ACCESS_TOKEN, LINE_USER_ID（必須）
  *   GEMINI_API_KEY（任意）… 設定時に §6.1 Gemini で ■2 を生成。未設定時は §6.2 テンプレのみ
+ *   AVATAR_BASE_URL（任意）… キャラ画像を配信する URL（末尾スラッシュなし）。例: https://yattakai-avatars.surge.sh
+ *                             未設定時は LIFF でテキストのみ表示（フォールバック）
  *   LIFF_URL（任意）… 設定時のみプッシュ末尾に「ダッシュボード: …?date=…&token=…」を付与
  *   SKIP_DASH_TOKEN_CHECK（任意）… true のとき token 検証をスキップ（開発用のみ・本番は設定しない）
  *
@@ -493,6 +495,8 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
   var defaultDateJson = JSON.stringify(dateStr);
   var defaultTokenJson = JSON.stringify(String(tokenStr || ''));
   var escapedHint = escapeHtml_(message || '');
+  // AVATAR_BASE_URL: 末尾スラッシュなし。未設定時は '' → 画像なし（テキストのみ）
+  var avatarBaseUrl = (PropertiesService.getScriptProperties().getProperty('AVATAR_BASE_URL') || '').replace(/\/$/, '');
 
   var css = [
     'body{font-family:system-ui,sans-serif;padding:0 16px 40px;max-width:480px;margin:0 auto;background:#fafafa;color:#1E293B;}',
@@ -522,6 +526,12 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '.sec2{background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:14px 16px;margin-top:4px;}',
     '.qt{font-size:14px;font-weight:700;color:#1E293B;margin:0 0 4px;line-height:1.6;}',
     '.qa{font-size:11px;color:#94A3B8;margin:0 0 10px;}',
+    '.ch{display:flex;align-items:flex-start;gap:10px;margin:10px 0;}',
+    '.ch.r{flex-direction:row-reverse;}',
+    '.av{width:64px;height:64px;border-radius:50%;object-fit:cover;flex-shrink:0;background:#F1F5F9;}',
+    '.bubble{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:8px 12px;font-size:13px;color:#334155;line-height:1.6;flex:1;}',
+    '.ch.r .bubble{background:#EFF6FF;border-color:#BFDBFE;}',
+    '.cn{font-size:10px;font-weight:700;color:#94A3B8;margin:0 0 2px;letter-spacing:.04em;}',
     '.dg{font-size:13px;color:#475569;margin:6px 0;line-height:1.6;}',
     '.footer{margin-top:28px;padding-top:14px;border-top:1px solid #E2E8F0;font-size:11px;color:#94A3B8;text-align:center;}',
     'a{color:#3B82F6;text-decoration:none;}',
@@ -529,7 +539,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
 
   var js = [
     '(function(){',
-    'var D=' + defaultDateJson + ',T=' + defaultTokenJson + ',NS="http://www.w3.org/2000/svg";',
+    'var D=' + defaultDateJson + ',T=' + defaultTokenJson + ',AV=' + JSON.stringify(avatarBaseUrl) + ',NS="http://www.w3.org/2000/svg";',
     'var root=document.getElementById("app"),stEl=document.getElementById("st"),linkEl=document.getElementById("jl");',
     'var qs=new URLSearchParams(window.location.search);',
     'var date=(qs.get("date")||"").trim()||D,token=(qs.get("token")||"").trim()||T;',
@@ -593,11 +603,22 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '    var cls="ti "+(t.status==="done"?"td":t.status==="not_done"?"tn":"tu");',
     '    ul.appendChild(h("li",t.label+" "+t.status_mark,cls));}',
     '  ts.appendChild(ul);frag.appendChild(ts);',
-    // Section 2
+    // Section 2 — avatar image + bubble layout
     '  var s2=data.section2||{};var sec=document.createElement("div");sec.className="sec2";',
-    '  sec.appendChild(h("h2","今日の一言"));sec.appendChild(h("p","「"+(s2.quote||"")+"」","qt"));',
+    '  sec.appendChild(h("h2","今日の一言"));',
+    '  sec.appendChild(h("p","「"+(s2.quote||"")+"」","qt"));',
     '  if(s2.quote_attribution)sec.appendChild(h("p",s2.quote_attribution,"qa"));',
-    '  sec.appendChild(h("p","イチ: "+(s2.ichisan||""),"dg"));sec.appendChild(h("p","ヒロ子: "+(s2.hiroko||""),"dg"));',
+    // mkChar: name, text, imgFile, isRight
+    '  function mkChar(name,text,imgFile,isRight){',
+    '    var row=document.createElement("div");row.className="ch"+(isRight?" r":"");',
+    '    if(AV&&imgFile){var img=document.createElement("img");img.className="av";img.src=AV+"/"+imgFile;img.alt=name;img.onerror=function(){this.style.display="none";};row.appendChild(img);}',
+    '    var bub=document.createElement("div");bub.className="bubble";',
+    '    var cn=document.createElement("p");cn.className="cn";cn.textContent=name;',
+    '    var tx=document.createElement("p");tx.style.margin="0";tx.textContent=text;',
+    '    bub.appendChild(cn);bub.appendChild(tx);row.appendChild(bub);return row;',
+    '  }',
+    '  sec.appendChild(mkChar("イチさん",s2.ichisan||"",s2.ichisan_image||"",false));',
+    '  sec.appendChild(mkChar("ヒロ子",s2.hiroko||"",s2.hiroko_image||"",true));',
     '  frag.appendChild(sec);root.appendChild(frag);',
     '}',
     'google.script.run.withSuccessHandler(paint).withFailureHandler(function(err){stEl.textContent="取得に失敗しました: "+(err&&err.message?err.message:String(err));}).getDashboardJsonForClient(date,token);',
@@ -691,6 +712,26 @@ function buildSection2DtoAndBlock_(dto, sourceLbl) {
 }
 
 /**
+ * キャラクター口調ルール（金型）— ここだけ直せばプロンプト全体に反映される。
+ * character-voice.md の必須ルールを凝縮したもの。
+ */
+var CHAR_VOICE_RULES_ = [
+  '【イチさん（チャートマスター）口調ルール】',
+  '・一人称: ワシ（俺/僕/私は禁止）',
+  '・ヒロ子の呼び方: ヒロ子ちゃん または お主',
+  '・語尾: 〜じゃ / 〜じゃな / 〜じゃろう / 〜のじゃ / 〜しておくんじゃ',
+  '・禁止: です/ます/してください などの丁寧語。「〜でございます」も禁止',
+  '・語りの質: 短文に重みを持たせる。饒舌にしない',
+  '・良い例: 「まずは防衛ラインを決めておくんじゃ」「焦りは相場の敵じゃ」',
+  '',
+  '【ヒロ子口調ルール】',
+  '・一人称: あたし（うちはたまに）',
+  '・語尾: 〜じゃん / 〜だよね / 〜っしょ / マジ？ / 〜かも',
+  '・態度: 率直に驚く・共感する。固すぎる敬語は禁止',
+  '・良い例: 「えっ！？なんでこうなるの？」「マジそれなー！」',
+].join('\n');
+
+/**
  * §6.1: Gemini API で ■2 を生成。
  * 失敗時（キー未設定 / タイムアウト / HTTP エラー / JSON 不正 / 必須キー欠落）は
  * { ok: false, error } を返し、呼び出し元（buildSection2_）がテンプレに切り替える。
@@ -704,23 +745,21 @@ function callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribu
 
   var quoteRef = '「' + quoteText + '」' + (attribution ? '（' + attribution + '）' : '');
   var prompt = [
-    'あなたはキャラクター対話の生成AIです。',
-    'キャラクター紹介:',
-    '- イチさん: 相場歴40年超・落ち着いた先輩口調。名言を引用しながら今日の結果を短く受け止め励ます。',
-    '- ヒロ子: 投資歴3年・ギャル・サラリーマン投資家。名言の意味をリアクション交えて砕けた口調で解説。',
+    'あなたはキャラクター対話の生成AIです。以下の口調ルールを厳守してセリフを書いてください。',
     '',
-    '今日の状況（これだけを使うこと）:',
+    CHAR_VOICE_RULES_,
+    '',
+    '今日の状況（これだけを使うこと・個人情報は含まない）:',
     '  達成率: ' + achievementPercent + '%',
     '  今日のメッセージ: 「' + moodMessage + '」',
     '  参考名言: ' + quoteRef,
     '',
     'ルール:',
+    '  - 各セリフは 1〜2 文（短め・簡潔に）',
     '  - 個人のタスク名・プライベート情報は出力しない',
-    '  - 各セリフは 1〜2 文（短め）',
-    '  - イチさんは落ち着いた先輩口調、ヒロ子はギャル口調',
     '',
     '必ず次の JSON のみ返してください（コードブロック・前後の説明文は不要）:',
-    '{"quote":"使った名言の原文","ichisan":"イチさんのセリフ","hiroko":"ヒロ子のセリフ"}',
+    '{"quote":"参考にした名言の原文","ichisan":"イチさんのセリフ","hiroko":"ヒロ子のセリフ"}',
   ].join('\n');
 
   var url =
