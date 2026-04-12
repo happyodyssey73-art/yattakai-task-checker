@@ -10,12 +10,15 @@
 4. `gas` 内に `.clasp.json` を置く（`scriptId` のみ。`.clasp.json.example` を参考）
 5. `clasp push` でアップロード
 
-## スクリプト プロパティ（必須）
+## スクリプト プロパティ
 
-| プロパティ | 内容 |
-|------------|------|
-| `LINE_CHANNEL_ACCESS_TOKEN` | Messaging API チャネルアクセストークン |
-| `LINE_USER_ID` | プッシュ先の `U...` |
+| プロパティ | 必須 | 内容 |
+|------------|------|------|
+| `LINE_CHANNEL_ACCESS_TOKEN` | 必須 | Messaging API チャネルアクセストークン |
+| `LINE_USER_ID` | 必須 | プッシュ先の `U...` |
+| `GEMINI_API_KEY` | 任意 | [Google AI Studio](https://aistudio.google.com/) で取得した API キー。設定すると ■2 を Gemini で生成（§6.1）。未設定時は Quotes＋テンプレフォールバック（§6.2）のみ動作 |
+| `LIFF_URL` | 任意 | LINE プッシュ末尾に付与するダッシュボードの LIFF URL |
+| `SKIP_DASH_TOKEN_CHECK` | 任意 | `true` のとき token 検証をスキップ（**開発用のみ・本番は設定しない**） |
 
 ## 実装メモ
 

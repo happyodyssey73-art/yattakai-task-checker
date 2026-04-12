@@ -3,8 +3,9 @@
  *
  * スクリプト プロパティ:
  *   LINE_CHANNEL_ACCESS_TOKEN, LINE_USER_ID（必須）
+ *   GEMINI_API_KEY（任意）… 設定時に §6.1 Gemini で ■2 を生成。未設定時は §6.2 テンプレのみ
  *   LIFF_URL（任意）… 設定時のみプッシュ末尾に「ダッシュボード: …?date=…&token=…」を付与
- *   SKIP_DASH_TOKEN_CHECK（任意）… true のとき token 検証をスキップ（開発用のみ）
+ *   SKIP_DASH_TOKEN_CHECK（任意）… true のとき token 検証をスキップ（開発用のみ・本番は設定しない）
  *
  * シート: Daily / Tasks / Quotes（§4）… シート名は SPEC どおり英字
  *
@@ -207,7 +208,7 @@ function buildDailyDashboardModel_(ss, dateStr, tz, opts) {
     });
   }
 
-  var section2 = buildSection2QuotesAndTemplate_(ss, dateStr, pct, mood);
+  var section2 = buildSection2_(ss, dateStr, pct, mood);
   var categories = buildCategoryStatsMap_(ss, tasksSheet, tasksOut);
 
   return {
@@ -630,61 +631,177 @@ function escapeHtml_(s) {
 }
 
 /**
- * §6.2 テンプレ経路: Quotes から決定的に 1 件 + テンプレ + §5.5.1 表情ファイル名
- * 戻り値: { dto, textBlock } … LINE は textBlock、将来の JSON は dto
+ * §6.1 / §6.2: ■2 生成のオーケストレーター（Gemini 優先 → 失敗時テンプレフォールバック）。
+ * Quotes から名言を決定的に 1 件取得し、Gemini のプロンプト参照 + テンプレ両方で共用。
+ * 個人タスク全文はプロンプトに載せない（SPEC §6.1 方針）。
+ * 戻り値: { dto, textBlock }
  */
-function buildSection2QuotesAndTemplate_(ss, todayStr, achievementPercent, moodMessage) {
-  var avatars = pickAvatarsByPercent_(achievementPercent);
+function buildSection2_(ss, todayStr, achievementPercent, moodMessage) {
   var quotesSheet = ss.getSheetByName('Quotes');
   var quotes = quotesSheet ? loadActiveQuotes_(quotesSheet) : [];
-
-  var quoteText = '';
-  var attribution = '';
+  var quoteText, attribution;
   if (quotes.length > 0) {
     var idx = dayHash_(todayStr) % quotes.length;
     quoteText = quotes[idx].text;
     attribution = quotes[idx].attribution || '';
   } else {
     quoteText = finalFallbackQuoteText_();
+    attribution = '';
   }
 
+  // §6.1: Gemini 試行
+  var geminiResult = callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribution);
+  if (geminiResult.ok) {
+    Logger.log('[section2] Gemini 成功');
+    return buildSection2DtoAndBlock_(geminiResult.dto, '（Gemini）');
+  }
+
+  // §6.2: テンプレフォールバック
+  Logger.log('[section2] Gemini 失敗 → テンプレ経路 reason=' + (geminiResult.error || 'unknown'));
+  var avatars = pickAvatarsByPercent_(achievementPercent);
   var vars = {
     quote: quoteText,
     achievement_percent: String(achievementPercent),
     mood_message: moodMessage,
     attribution: attribution,
   };
-
-  var ichisanTpl =
-    '{{mood_message}} の {{achievement_percent}}％。『{{quote}}』…イチ、今日はここまで！';
-  var hirokoTpl =
-    '達成率 {{achievement_percent}}％ね。「{{quote}}」…{{mood_message}}、明日も一歩でいこ。';
-
-  var ichisan = substituteTemplate_(ichisanTpl, vars);
-  var hiroko = substituteTemplate_(hirokoTpl, vars);
-
+  var ichisanTpl = '{{mood_message}} の {{achievement_percent}}％。『{{quote}}』…イチ、今日はここまで！';
+  var hirokoTpl = '達成率 {{achievement_percent}}％ね。「{{quote}}」…{{mood_message}}、明日も一歩でいこ。';
   var dto = {
     quote: quoteText,
     quote_attribution: attribution,
-    ichisan: ichisan,
-    hiroko: hiroko,
+    ichisan: substituteTemplate_(ichisanTpl, vars),
+    hiroko: substituteTemplate_(hirokoTpl, vars),
     ichisan_image: avatars.ichisan_image,
     hiroko_image: avatars.hiroko_image,
   };
+  return buildSection2DtoAndBlock_(dto, '（テンプレ）');
+}
 
-  var textLines = [];
-  textLines.push('【今日の一言（■2・テンプレ）】');
-  textLines.push('「' + quoteText + '」');
-  if (attribution) textLines.push('（出典メモ: ' + attribution + '）');
-  textLines.push('');
-  textLines.push('イチ: ' + ichisan);
-  textLines.push('ヒロ子: ' + hiroko);
-  textLines.push('');
-  textLines.push(
-    '（表情: ' + dto.ichisan_image + ' / ' + dto.hiroko_image + ' ※LIFF 用ファイル名）'
-  );
+/** dto から LINE 用テキストブロックを組み立てるヘルパー */
+function buildSection2DtoAndBlock_(dto, sourceLbl) {
+  var lines = [];
+  lines.push('【今日の一言（■2）' + sourceLbl + '】');
+  lines.push('「' + dto.quote + '」');
+  if (dto.quote_attribution) lines.push('（出典: ' + dto.quote_attribution + '）');
+  lines.push('');
+  lines.push('イチ: ' + dto.ichisan);
+  lines.push('ヒロ子: ' + dto.hiroko);
+  return { dto: dto, textBlock: lines.join('\n') };
+}
 
-  return { dto: dto, textBlock: textLines.join('\n') };
+/**
+ * §6.1: Gemini API で ■2 を生成。
+ * 失敗時（キー未設定 / タイムアウト / HTTP エラー / JSON 不正 / 必須キー欠落）は
+ * { ok: false, error } を返し、呼び出し元（buildSection2_）がテンプレに切り替える。
+ *
+ * スクリプトプロパティ: GEMINI_API_KEY（未設定なら即テンプレフォールバック）
+ * プロンプトに個人タスク名・プライベート情報は含めない。
+ */
+function callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribution) {
+  var apiKey = (PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '').trim();
+  if (!apiKey) return { ok: false, error: 'api_key_not_set' };
+
+  var quoteRef = '「' + quoteText + '」' + (attribution ? '（' + attribution + '）' : '');
+  var prompt = [
+    'あなたはキャラクター対話の生成AIです。',
+    'キャラクター紹介:',
+    '- イチさん: 相場歴40年超・落ち着いた先輩口調。名言を引用しながら今日の結果を短く受け止め励ます。',
+    '- ヒロ子: 投資歴3年・ギャル・サラリーマン投資家。名言の意味をリアクション交えて砕けた口調で解説。',
+    '',
+    '今日の状況（これだけを使うこと）:',
+    '  達成率: ' + achievementPercent + '%',
+    '  今日のメッセージ: 「' + moodMessage + '」',
+    '  参考名言: ' + quoteRef,
+    '',
+    'ルール:',
+    '  - 個人のタスク名・プライベート情報は出力しない',
+    '  - 各セリフは 1〜2 文（短め）',
+    '  - イチさんは落ち着いた先輩口調、ヒロ子はギャル口調',
+    '',
+    '必ず次の JSON のみ返してください（コードブロック・前後の説明文は不要）:',
+    '{"quote":"使った名言の原文","ichisan":"イチさんのセリフ","hiroko":"ヒロ子のセリフ"}',
+  ].join('\n');
+
+  var url =
+    'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=' +
+    apiKey;
+  var options = {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({
+      contents: [{ parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.7,
+        maxOutputTokens: 2048,
+      },
+    }),
+    muteHttpExceptions: true,
+  };
+
+  var res;
+  try {
+    res = UrlFetchApp.fetch(url, options);
+  } catch (e) {
+    return { ok: false, error: 'fetch_failed' };
+  }
+
+  var code = res.getResponseCode();
+  if (code !== 200) return { ok: false, error: 'http_' + code };
+
+  var raw;
+  try {
+    raw = JSON.parse(res.getContentText());
+  } catch (e) {
+    return { ok: false, error: 'response_parse_failed' };
+  }
+
+  var text = '';
+  try {
+    // 思考モデルは複数 part を返すことがある。末尾 part に本文が来るため最後を取る
+    var parts = raw.candidates[0].content.parts;
+    text = parts[parts.length - 1].text;
+  } catch (e) {
+    return { ok: false, error: 'unexpected_shape' };
+  }
+
+  // コードブロック除去
+  text = text.replace(/```[a-z]*/gi, '').replace(/```/g, '').trim();
+
+  var parsed;
+  try {
+    parsed = JSON.parse(text);
+  } catch (e) {
+    // 直接 parse できない場合は JSON オブジェクト部分だけ抽出して再試行
+    var m = text.match(/\{[\s\S]*\}/);
+    if (!m) return { ok: false, error: 'json_parse_failed' };
+    try {
+      parsed = JSON.parse(m[0]);
+    } catch (e2) {
+      return { ok: false, error: 'json_parse_failed' };
+    }
+  }
+
+  if (!parsed || typeof parsed.ichisan !== 'string' || typeof parsed.hiroko !== 'string') {
+    return { ok: false, error: 'missing_required_keys' };
+  }
+
+  // 表情ファイル名は GAS 側のテーブルで決定（Gemini に判断させない・SPEC §6.1）
+  var avatars = pickAvatarsByPercent_(achievementPercent);
+  return {
+    ok: true,
+    dto: {
+      quote:
+        typeof parsed.quote === 'string' && parsed.quote.trim()
+          ? parsed.quote.trim()
+          : quoteText,
+      quote_attribution: attribution,
+      ichisan: parsed.ichisan.trim(),
+      hiroko: parsed.hiroko.trim(),
+      ichisan_image: avatars.ichisan_image,
+      hiroko_image: avatars.hiroko_image,
+    },
+  };
 }
 
 /** §4.4 Quotes: 必須列を検査し active=TRUE・text 非空のみ */
