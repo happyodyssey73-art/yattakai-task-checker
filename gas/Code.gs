@@ -26,6 +26,9 @@ var DASH_TOKEN_PROP_PREFIX_ = 'yattakai_dash_token_';
 var CACHE_KEY_PREFIX_ = 'yattakai_dash_v1_';
 var CACHE_TTL_SEC_    = 1800;
 
+/** タイムゾーン（GAS プロジェクト設定の TZ_ に依存しないよう明示固定）*/
+var TZ_ = 'Asia/Tokyo';
+
 function generateDashToken_() {
   return Utilities.getUuid().replace(/-/g, '');
 }
@@ -46,6 +49,7 @@ function isSkipDashTokenCheck_() {
  */
 function assertDashboardToken_(dateStr, tokenParam) {
   if (isSkipDashTokenCheck_()) {
+    Logger.log('[SECURITY WARNING] SKIP_DASH_TOKEN_CHECK が有効です。本番環境では必ず無効にしてください。date=' + dateStr);
     return { ok: true };
   }
   var key = dashTokenPropKey_(dateStr);
@@ -96,15 +100,45 @@ function installDailyReminderTrigger() {
     .everyDays(1)
     .atHour(17)
     .nearMinute(40)
-    .inTimezone(Session.getScriptTimeZone())
+    .inTimezone(TZ_)
     .create();
 }
 
-function sendDailyReminder() {
-  var tz = Session.getScriptTimeZone();
-  var todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+/**
+ * 同日に複数回 sendDailyReminder が実行された場合でも 1 回だけ送信する冪等ロック。
+ * ScriptProperties の 'sent:{dateStr}' フラグで送信済みを管理し、cleanupOldDashTokens で定期削除する。
+ * @private
+ */
+function withDailyLock_(dateStr, fn) {
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(8000);
+  } catch (e) {
+    Logger.log('[withDailyLock_] ロック取得タイムアウト。スキップ（' + dateStr + '）');
+    return;
+  }
+  try {
+    var key = 'sent:' + dateStr;
+    var props = PropertiesService.getScriptProperties();
+    if (!props.getProperty(key)) {
+      fn();
+      props.setProperty(key, '1');
+    } else {
+      Logger.log('[withDailyLock_] 本日分は送信済みのためスキップ（' + dateStr + '）');
+    }
+  } finally {
+    lock.releaseLock();
+  }
+}
 
+function sendDailyReminder() {
+  var todayStr = Utilities.formatDate(new Date(), TZ_, 'yyyy-MM-dd');
+  withDailyLock_(todayStr, function() { sendDailyReminderImpl_(todayStr); });
+}
+
+/** sendDailyReminder の実処理（withDailyLock_ 内で 1 日 1 回だけ実行される） */
+function sendDailyReminderImpl_(todayStr) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
   var props = PropertiesService.getScriptProperties();
   var token = props.getProperty('LINE_CHANNEL_ACCESS_TOKEN');
   var userId = props.getProperty('LINE_USER_ID');
@@ -112,28 +146,22 @@ function sendDailyReminder() {
     throw new Error('スクリプト プロパティに LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID を設定してください。');
   }
 
-  var model = buildDailyDashboardModel_(ss, todayStr, tz, { ensureTodayRows: true });
+  var model = buildDailyDashboardModel_(ss, todayStr, TZ_, { ensureTodayRows: true });
   if (!model.ok) {
     linePushText_(token, userId, '【やったかい】' + todayStr + ' の Daily 行がありません。');
     return;
   }
 
-  // LIFF を即時に開けるようキャッシュをウォームアップ
-  // （sendDailyReminder 内で既に Gemini を呼んだ結果を再利用するため追加コストなし）
+  // LIFF を即時に開けるようキャッシュをウォームアップ（Gemini 呼び出し結果を再利用）
   try {
     var warmPub = toPublicDashboardJson_(model);
-    CacheService.getScriptCache().put(
-      CACHE_KEY_PREFIX_ + todayStr,
-      JSON.stringify(warmPub),
-      CACHE_TTL_SEC_
-    );
+    CacheService.getScriptCache().put(CACHE_KEY_PREFIX_ + todayStr, JSON.stringify(warmPub), CACHE_TTL_SEC_);
     Logger.log('[sendDailyReminder] キャッシュをウォームアップしました（' + todayStr + '）');
   } catch (warnErr) {
     Logger.log('[sendDailyReminder] キャッシュウォームアップ失敗（無視）: ' + String(warnErr));
   }
 
   var lines = formatDailyReminderLines_(model);
-
   var dashToken = generateDashToken_();
   PropertiesService.getScriptProperties().setProperty(dashTokenPropKey_(model.date), dashToken);
 
@@ -144,21 +172,20 @@ function sendDailyReminder() {
     lines.push('');
     lines.push('ダッシュボード: ' + liffUrl + sep + q);
   }
-
   linePushText_(token, userId, lines.join('\n'));
 }
 
 /**
  * 指定日の Daily を読み集計し ■2 DTO まで組み立てる（sendDailyReminder / doGet 共通）。
- * @param {{ ensureTodayRows?: boolean }} opts true のとき ensureDailyRowsForToday_ を実行（当日シート補完）
+ * @param {{ ensureTodayRows?: boolean, skipSection2?: boolean }} opts
  * @returns {{
  *   ok: boolean,
  *   error?: string,
  *   date?: string,
  *   achievement_percent?: number,
  *   mood_message?: string,
- *   counts?: { done: number, not_done: number, unset: number, total: number },
- *   tasks?: Array<{ task_id: string, label: string, status: string, status_mark: string }>,
+ *   counts?: { done: number, not_done: number, total: number },
+ *   tasks?: Array<{ task_id: string, label: string, status: string, status_mark: string, is_explicit: boolean }>,
  *   section2?: Object,
  *   section2TextBlock?: string
  * }}
@@ -177,9 +204,10 @@ function buildDailyDashboardModel_(ss, dateStr, tz, opts) {
 
   var dailyRows = dailySheet.getDataRange().getValues();
   var header = dailyRows[0];
-  var ciDate = header.indexOf('date');
-  var ciTask = header.indexOf('task_id');
-  var ciStat = header.indexOf('status');
+  var ciDate  = header.indexOf('date');
+  var ciTask  = header.indexOf('task_id');
+  var ciStat  = header.indexOf('status');
+  var ciUpdAt = header.indexOf('updated_at'); // 存在すればユーザーが明示的に設定済みかを判定
   if (ciDate < 0 || ciTask < 0 || ciStat < 0) {
     throw new Error('Daily の 1 行目に date / task_id / status 列が必要です。');
   }
@@ -189,9 +217,12 @@ function buildDailyDashboardModel_(ss, dateStr, tz, opts) {
     var row = dailyRows[r];
     var d = formatDateCell_(row[ciDate], tz);
     if (d === dateStr) {
+      // updated_at が空 = 自動初期化行（ユーザーがまだ明示的に入力していない）
+      var isExplicit = ciUpdAt >= 0 && row[ciUpdAt] !== '' && row[ciUpdAt] !== null && row[ciUpdAt] !== undefined;
       todays.push({
         task_id: String(row[ciTask] || '').trim(),
         raw: row[ciStat],
+        is_explicit: isExplicit,
       });
     }
   }
@@ -202,20 +233,20 @@ function buildDailyDashboardModel_(ss, dateStr, tz, opts) {
 
   var done = 0;
   var notDone = 0;
-  var unset = 0;
   for (var i = 0; i < todays.length; i++) {
     var st = normalizeStatus_(todays[i].raw);
     todays[i].status = st;
     if (st === 'done') done++;
-    else if (st === 'not_done') notDone++;
-    else unset++;
+    else notDone++;
   }
 
   var denom = todays.length;
   var pct = Math.round((done / denom) * 100);
-  // 空欄は not_done として扱うため unset は常に 0 → 達成率でそのままメッセージを決定
   var mood = moodMessage_(pct);
-  var taskMap = buildTaskLabelMap_(tasksSheet);
+
+  // タスクシートは一度だけ読んで buildTaskLabelMap_ と buildCategoryStatsMap_ で共有
+  var tRows = tasksSheet.getDataRange().getValues();
+  var taskMap = buildTaskLabelMapFromRows_(tRows);
 
   var tasksOut = [];
   for (var j = 0; j < todays.length; j++) {
@@ -226,6 +257,7 @@ function buildDailyDashboardModel_(ss, dateStr, tz, opts) {
       label: label,
       status: t.status,
       status_mark: statusMark_(t.status),
+      is_explicit: !!t.is_explicit, // LIFF のニュートラル表示制御に使用
     });
   }
 
@@ -237,19 +269,14 @@ function buildDailyDashboardModel_(ss, dateStr, tz, opts) {
     section2Dto = s2.dto;
     section2TextBlock = s2.textBlock;
   }
-  var categories = buildCategoryStatsMap_(ss, tasksSheet, tasksOut);
+  var categories = buildCategoryStatsMap_(ss, tasksSheet, tasksOut, tRows);
 
   return {
     ok: true,
     date: dateStr,
     achievement_percent: pct,
     mood_message: mood,
-    counts: {
-      done: done,
-      not_done: notDone,
-      unset: unset,
-      total: denom,
-    },
+    counts: { done: done, not_done: notDone, total: denom },
     tasks: tasksOut,
     categories: categories,
     section2: section2Dto,
@@ -258,12 +285,40 @@ function buildDailyDashboardModel_(ss, dateStr, tz, opts) {
 }
 
 /**
- * Categories シート + Tasks シートのカテゴリ列を使い、タスク集計結果をカテゴリ別に集計。
- * Categories シートが無い・category_id 列が無い場合はタスクを「その他」に集約して返す。
- * @returns Array<{ category_id, display_name, color, sort_order, done, not_done, unset, total }>
+ * buildTaskLabelMap_ の行配列版。buildDailyDashboardModel_ でシートを一度読んだ配列を再利用する。
+ * @private
  */
-function buildCategoryStatsMap_(ss, tasksSheet, tasksOut) {
-  var tRows = tasksSheet.getDataRange().getValues();
+function buildTaskLabelMapFromRows_(rows) {
+  var h = rows[0];
+  var ixId    = h.indexOf('task_id');
+  var ixShort = h.indexOf('display_short');
+  var ixTitle = h.indexOf('title');
+  var ixActive = h.indexOf('active');
+  if (ixId < 0) throw new Error('Tasks の 1 行目に task_id 列が必要です。');
+  var map = {};
+  for (var r = 1; r < rows.length; r++) {
+    var row = rows[r];
+    var id = String(row[ixId] || '').trim();
+    if (!id) continue;
+    if (ixActive >= 0) {
+      var a = row[ixActive];
+      if (a === false || String(a).toUpperCase() === 'FALSE') continue;
+    }
+    var shortv = ixShort >= 0 ? String(row[ixShort] || '').trim() : '';
+    var titlev = ixTitle >= 0 ? String(row[ixTitle] || '').trim() : '';
+    map[id] = shortv || titlev || id;
+  }
+  return map;
+}
+
+/**
+ * Categories シート + Tasks シートのカテゴリ列を使い、タスク集計結果をカテゴリ別に集計。
+ * taskRows を渡せばシートの再読み込みをスキップする（buildDailyDashboardModel_ での二重読み防止）。
+ * Categories シートが無い・category_id 列が無い場合はタスクを「その他」に集約して返す。
+ * @returns Array<{ category_id, display_name, color, sort_order, done, not_done, total }>
+ */
+function buildCategoryStatsMap_(ss, tasksSheet, tasksOut, taskRows) {
+  var tRows = taskRows || tasksSheet.getDataRange().getValues();
   var th = tRows[0];
   var ixTid = th.indexOf('task_id');
   var ixCat = th.indexOf('category_id');
@@ -303,7 +358,7 @@ function buildCategoryStatsMap_(ss, tasksSheet, tasksOut) {
           display_name: cxName >= 0 ? String(crow[cxName] || catId).trim() : catId,
           color: cxColor >= 0 ? String(crow[cxColor] || '#94A3B8').trim() : '#94A3B8',
           sort_order: sord,
-          done: 0, not_done: 0, unset: 0, total: 0,
+          done: 0, not_done: 0, total: 0,
         };
         catOrder.push({ id: catId, ord: sord });
       }
@@ -319,7 +374,7 @@ function buildCategoryStatsMap_(ss, tasksSheet, tasksOut) {
       if (!catMap[NONE]) {
         catMap[NONE] = {
           category_id: NONE, display_name: 'その他', color: '#94A3B8',
-          sort_order: 9999, done: 0, not_done: 0, unset: 0, total: 0,
+          sort_order: 9999, done: 0, not_done: 0, total: 0,
         };
         hasNone = true;
       }
@@ -328,8 +383,7 @@ function buildCategoryStatsMap_(ss, tasksSheet, tasksOut) {
     var cat = catMap[cid2];
     cat.total++;
     if (task.status === 'done') cat.done++;
-    else if (task.status === 'not_done') cat.not_done++;
-    else cat.unset++;
+    else cat.not_done++;
   }
   if (hasNone) catOrder.push({ id: NONE, ord: 9999 });
 
@@ -387,7 +441,7 @@ function parseLiffState_(liffState) {
 function doGet(e) {
   e = e || {};
   var p = e.parameter || {};
-  var tz = Session.getScriptTimeZone();
+  var tz = TZ_;
 
   var rawDate = (p.date && String(p.date).trim()) || '';
   var format = (p.format && String(p.format).trim().toLowerCase()) || '';
@@ -485,7 +539,7 @@ function toPublicDashboardJson_(model) {
  * 名前末尾に _ を付けない（google.script.run の制約）。
  */
 function getDashboardJsonForClient(dateStr, clientToken) {
-  var tz = Session.getScriptTimeZone();
+  var tz = TZ_;
   var d = (dateStr && String(dateStr).trim()) || Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(d)) {
     return { ok: false, error: 'invalid_date', date: d };
@@ -613,7 +667,7 @@ function updateTaskStatus(dateStr, clientToken, taskId, newStatus) {
       return { ok: false, error: 'MISSING_COLUMNS' };
     }
 
-    var tz = Session.getScriptTimeZone();
+    var tz = TZ_;
     var written = false;
     for (var i = 1; i < data.length; i++) {
       var rowDate   = formatDateCell_(data[i][colDate], tz);
@@ -634,10 +688,18 @@ function updateTaskStatus(dateStr, clientToken, taskId, newStatus) {
       return { ok: false, error: 'TASK_NOT_FOUND' };
     }
 
-    // キャッシュを無効化してから高速集計（section2=Gemini は skip → updateSummary は使わないため不要）
+    // キャッシュを無効化 → 高速再ビルド → キャッシュに書き戻す（次回 LIFF アクセスを高速化）
     invalidateDashboardCache_(d);
     var model = buildDailyDashboardModel_(ss, d, tz, { skipSection2: true });
-    return toPublicDashboardJson_(model);
+    var pub = toPublicDashboardJson_(model);
+    if (pub.ok) {
+      try {
+        CacheService.getScriptCache().put(CACHE_KEY_PREFIX_ + d, JSON.stringify(pub), CACHE_TTL_SEC_);
+      } catch (ce) {
+        Logger.log('[updateTaskStatus] キャッシュ書き戻し失敗（無視）: ' + String(ce));
+      }
+    }
+    return pub;
   } finally {
     lock.releaseLock();
   }
@@ -667,7 +729,11 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
   var bakedJson = (model && model.ok) ? JSON.stringify(model) : 'null';
 
   var css = [
-    'body{font-family:system-ui,sans-serif;padding:0 16px 40px;max-width:480px;margin:0 auto;background:#fafafa;color:#1E293B;}',
+    // iOS/Android セーフエリア対応（ノッチ・ホームバー）と和文フォントスタック
+    '*{-webkit-tap-highlight-color:transparent;box-sizing:border-box;}',
+    'body{font-family:"Noto Sans JP","Hiragino Kaku Gothic ProN",system-ui,sans-serif;',
+    'padding:env(safe-area-inset-top,0) 16px calc(40px + env(safe-area-inset-bottom,0));',
+    'max-width:480px;margin:0 auto;background:#fafafa;color:#1E293B;}',
     '#st{min-height:1.4em;padding:10px 0 2px;font-size:13px;color:#64748B;}',
     '.top{text-align:center;padding:16px 0 6px;}',
     '.dlbl{font-size:12px;color:#94A3B8;margin:0 0 2px;letter-spacing:.04em;}',
@@ -676,27 +742,34 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '.donut-svg{width:160px;height:160px;}',
     '.dpct{font-size:30px;font-weight:900;fill:#1E293B;dominant-baseline:middle;text-anchor:middle;}',
     '.clbl{text-align:center;font-size:12px;color:#64748B;margin:2px 0 16px;}',
-    'h2{font-size:11px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.08em;margin:18px 0 8px;border-bottom:1px solid #E2E8F0;padding-bottom:4px;}',
+    // h2 の最小サイズを 11px→12px（物理サイズ約4mm確保）
+    'h2{font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.06em;margin:18px 0 8px;border-bottom:1px solid #E2E8F0;padding-bottom:4px;}',
     '.catsec,.tasksec{margin-bottom:4px;}',
     '.crow{margin-bottom:12px;}',
     '.cnr{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:5px;}',
     '.cdot{width:10px;height:10px;border-radius:50%;flex-shrink:0;display:inline-block;}',
     '.cfrac{margin-left:auto;font-size:13px;font-weight:700;color:#1E293B;}',
     '.cbar{height:8px;border-radius:4px;background:#F1F5F9;overflow:hidden;display:flex;}',
-    '.bd,.bn,.bu{height:100%;}',
+    '.bd,.bn{height:100%;}',
     '.bn{background:#FECACA;}',
-    '.bu{background:#E2E8F0;}',
     'ul{list-style:none;padding:0;margin:0;}',
     '.ti{padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:6px;border:1px solid #E2E8F0;background:#fff;display:flex;align-items:center;gap:8px;}',
     '.tlbl{flex:1;min-width:0;word-break:break-all;}',
-    '.tbtn{border:none;border-radius:8px;padding:6px 11px;font-size:16px;cursor:pointer;background:#F1F5F9;color:#94A3B8;transition:background .12s,color .12s;line-height:1;min-width:38px;flex-shrink:0;}',
+    // タップ領域を Apple/Google 推奨の 44×44 以上に拡大、transition を 80ms に短縮
+    '.tbtn{border:none;border-radius:8px;padding:10px 14px;font-size:16px;cursor:pointer;background:#F1F5F9;color:#94A3B8;',
+    'transition:background .08s,color .08s,transform .08s;line-height:1;min-width:44px;min-height:44px;flex-shrink:0;}',
+    '.tbtn:active{transform:scale(0.88);}',
     '.tbtn.a-done{background:#059669;color:#fff;}',
     '.tbtn.a-nd{background:#DC2626;color:#fff;}',
     '.tbtn:disabled{opacity:.4;cursor:not-allowed;}',
-    '.td{border-color:#A7F3D0;background:#F0FDF4;}',
-    '.tn{border-color:#FECACA;background:#FEF2F2;}',
-    '.tu{border-color:#E2E8F0;}',
-    '.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1E293B;color:#fff;padding:8px 20px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;white-space:nowrap;}',
+    '.td{border-color:#A7F3D0;background:#F0FDF4;}',  // ◯ 達成: 緑
+    '.tn{border-color:#FECACA;background:#FEF2F2;}',  // ✕ 明示的未達成: 赤
+    '.tu{border-color:#E2E8F0;background:#fff;}',     // 未記録（中立）: ニュートラル
+    // safe-area-inset-bottom を考慮、white-space:normal で長文トーストも折り返す
+    '.toast{position:fixed;bottom:calc(24px + env(safe-area-inset-bottom,0));left:50%;',
+    'transform:translateX(-50%);background:#1E293B;color:#fff;padding:8px 20px;border-radius:20px;',
+    'font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;',
+    'white-space:normal;max-width:calc(100vw - 48px);text-align:center;}',
     '.toast.show{opacity:1;}',
     '.sec2{background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:14px 16px;margin-top:4px;}',
     '.qt{font-size:14px;font-weight:700;color:#1E293B;margin:0 0 4px;line-height:1.6;}',
@@ -706,7 +779,8 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '.av{width:64px;height:64px;min-width:64px;border-radius:50%;overflow:hidden;flex-shrink:0;background:#E2E8F0;}',
     '.bubble{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:12px;padding:8px 12px;font-size:13px;color:#334155;line-height:1.6;flex:1;}',
     '.ch.r .bubble{background:#EFF6FF;border-color:#BFDBFE;}',
-    '.cn{font-size:10px;font-weight:700;color:#94A3B8;margin:0 0 2px;letter-spacing:.04em;}',
+    // キャラクター名を 10px→11px に引き上げ
+    '.cn{font-size:11px;font-weight:700;color:#94A3B8;margin:0 0 2px;letter-spacing:.04em;}',
     '.dg{font-size:13px;color:#475569;margin:6px 0;line-height:1.6;}',
     '.footer{margin-top:28px;padding-top:14px;border-top:1px solid #E2E8F0;font-size:11px;color:#94A3B8;text-align:center;}',
     'a{color:#3B82F6;text-decoration:none;}',
@@ -752,17 +826,22 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '  nr.appendChild(h("span",cat.done+"/"+cat.total,"cfrac"));row.appendChild(nr);',
     '  if(cat.total>0){var bar=document.createElement("div");bar.className="cbar";',
     '    function seg(v,cls,col){if(!(v>0))return;var s=document.createElement("div");s.className=cls;s.style.width=v.toFixed(1)+"%";if(col)s.style.background=sc(col);bar.appendChild(s);}',
-    '    seg(cat.done/cat.total*100,"bd",cat.color);seg(cat.not_done/cat.total*100,"bn",null);seg(cat.unset/cat.total*100,"bu",null);',
+    '    seg(cat.done/cat.total*100,"bd",cat.color);seg(cat.not_done/cat.total*100,"bn",null);',
     '    row.appendChild(bar);}',
     '  return row;',
     '}',
     // showToast
     'function showToast(msg){var t=document.getElementById("toast");if(!t)return;t.textContent=msg;t.className="toast show";setTimeout(function(){t.className="toast";},2500);}',
     // applyTaskStyle: li のクラスとボタンのアクティブ状態を同期
-    'function applyTaskStyle(li,st){',
-    '  li.className="ti "+(st==="done"?"td":st==="not_done"?"tn":"tu");',
+    // isExpl=true のとき: done→緑 / not_done→赤。false（未記録）のとき: ニュートラルグレー
+    'function applyTaskStyle(li,st,isExpl){',
+    '  li.className="ti "+(st==="done"?"td":(isExpl?"tn":"tu"));',
     '  var btns=li.querySelectorAll(".tbtn");',
-    '  for(var i=0;i<btns.length;i++){var s=btns[i].dataset.status;btns[i].className="tbtn"+(s===st?" "+(st==="done"?"a-done":"a-nd"):"");}',
+    '  for(var i=0;i<btns.length;i++){',
+    '    var s=btns[i].dataset.status;',
+    '    var act=(s==="done"&&st==="done")||(s==="not_done"&&st==="not_done"&&isExpl);',
+    '    btns[i].className="tbtn"+(act?" "+(s==="done"?"a-done":"a-nd"):"");',
+    '  }',
     '}',
     // mkStatusBtn: closure-in-loop を避けるため独立関数
     'function mkStatusBtn(s,taskId,li){',
@@ -772,32 +851,36 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '  return btn;',
     '}',
     // mkTaskRow: ◯/✕ ボタン付きタスク行を生成
+    // is_explicit=false（初期化直後）はニュートラル表示。タップ後に explicit=true に移行。
     'function mkTaskRow(t){',
     '  var li=document.createElement("li");',
-    '  li.dataset.taskId=t.task_id;li.dataset.status=t.status||"unset";',
+    '  var expl=!!t.is_explicit;',
+    '  li.dataset.taskId=t.task_id;li.dataset.status=t.status||"not_done";li.dataset.explicit=expl?"1":"0";',
     '  var lbl=document.createElement("span");lbl.className="tlbl";lbl.textContent=t.label;',
     '  li.appendChild(lbl);',
     '  li.appendChild(mkStatusBtn("done",t.task_id,li));',
     '  li.appendChild(mkStatusBtn("not_done",t.task_id,li));',
-    '  applyTaskStyle(li,t.status||"unset");',
+    '  applyTaskStyle(li,t.status||"not_done",expl);',
     '  return li;',
     '}',
     // onTaskToggle: 楽観的更新 → GAS RPC → 失敗時ロールバック
+    // 同じ状態 かつ 既に explicit の場合のみスキップ（未記録→同値でも明示的設定として送信）
     'function onTaskToggle(taskId,newStatus,li){',
     '  var prevStatus=li.dataset.status;',
-    '  if(prevStatus===newStatus)return;',
+    '  var prevExpl=li.dataset.explicit==="1";',
+    '  if(prevStatus===newStatus&&prevExpl)return;',
     '  var btns=li.querySelectorAll(".tbtn");',
     '  for(var i=0;i<btns.length;i++)btns[i].disabled=true;',
-    '  li.dataset.status=newStatus;applyTaskStyle(li,newStatus);',
+    '  li.dataset.status=newStatus;li.dataset.explicit="1";applyTaskStyle(li,newStatus,true);',
     '  google.script.run',
     '    .withSuccessHandler(function(res){',
     '      for(var i=0;i<btns.length;i++)btns[i].disabled=false;',
-    '      if(!res||!res.ok){li.dataset.status=prevStatus;applyTaskStyle(li,prevStatus);showToast("更新に失敗しました");return;}',
+    '      if(!res||!res.ok){li.dataset.status=prevStatus;li.dataset.explicit=prevExpl?"1":"0";applyTaskStyle(li,prevStatus,prevExpl);showToast("更新に失敗しました");return;}',
     '      updateSummary(res);',
     '    })',
     '    .withFailureHandler(function(){',
     '      for(var i=0;i<btns.length;i++)btns[i].disabled=false;',
-    '      li.dataset.status=prevStatus;applyTaskStyle(li,prevStatus);showToast("通信エラーが発生しました");',
+    '      li.dataset.status=prevStatus;li.dataset.explicit=prevExpl?"1":"0";applyTaskStyle(li,prevStatus,prevExpl);showToast("通信エラーが発生しました");',
     '    })',
     '    .updateTaskStatus(date,token,taskId,newStatus);',
     '}',
@@ -843,12 +926,24 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '  function mkChar(name,text,imgFile,isRight){',
     '    var row=document.createElement("div");row.className="ch"+(isRight?" r":"");',
     '    var avEl=document.createElement("div");avEl.className="av";',
+    // アバター画像が取得できない場合、名前の頭文字入りカラー円でフォールバック
+    '    var fbColor=isRight?"#F59E0B":"#475569";',
     '    if(AV&&imgFile){',
     '      var img=document.createElement("img");',
     '      img.style.cssText="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;";',
     '      img.src=AV+"/"+imgFile;img.alt=name;',
-    '      img.onerror=function(){this.style.display="none";};',
+    '      img.onerror=function(){',
+    '        this.style.display="none";',
+    '        var fb=document.createElement("div");',
+    '        fb.style.cssText="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:#fff;background:"+fbColor+";border-radius:50%;";',
+    '        fb.textContent=name.charAt(0);',
+    '        avEl.appendChild(fb);',
+    '      };',
     '      avEl.appendChild(img);',
+    '    }else{',
+    '      var fb2=document.createElement("div");',
+    '      fb2.style.cssText="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:#fff;background:"+fbColor+";border-radius:50%;";',
+    '      fb2.textContent=name.charAt(0);avEl.appendChild(fb2);',
     '    }',
     '    row.appendChild(avEl);',
     '    var bub=document.createElement("div");bub.className="bubble";',
@@ -1235,28 +1330,9 @@ function formatDateCell_(v, tz) {
   return s;
 }
 
+/** buildTaskLabelMapFromRows_ の薄いラッパー（setupMasterSheets など行配列を持たない呼び出し元向け） */
 function buildTaskLabelMap_(tasksSheet) {
-  var rows = tasksSheet.getDataRange().getValues();
-  var h = rows[0];
-  var ixId = h.indexOf('task_id');
-  var ixShort = h.indexOf('display_short');
-  var ixTitle = h.indexOf('title');
-  var ixActive = h.indexOf('active');
-  if (ixId < 0) throw new Error('Tasks の 1 行目に task_id 列が必要です。');
-  var map = {};
-  for (var r = 1; r < rows.length; r++) {
-    var row = rows[r];
-    var id = String(row[ixId] || '').trim();
-    if (!id) continue;
-    if (ixActive >= 0) {
-      var a = row[ixActive];
-      if (a === false || String(a).toUpperCase() === 'FALSE') continue;
-    }
-    var shortv = ixShort >= 0 ? String(row[ixShort] || '').trim() : '';
-    var titlev = ixTitle >= 0 ? String(row[ixTitle] || '').trim() : '';
-    map[id] = shortv || titlev || id;
-  }
-  return map;
+  return buildTaskLabelMapFromRows_(tasksSheet.getDataRange().getValues());
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -1274,7 +1350,7 @@ function buildTaskLabelMap_(tasksSheet) {
  */
 function setupMasterSheets() {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
-  var tz = Session.getScriptTimeZone();
+  var tz = TZ_;
   var todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
 
   setupCategories_(ss);
@@ -1538,8 +1614,9 @@ function ensureDailyRowsForToday_(ss, todayStr, tz) {
   var dailyRows = dailySheet.getDataRange().getValues();
   if (dailyRows.length < 1) throw new Error('ensureDailyRows: Daily にヘッダ行が必要です。');
   var dh = dailyRows[0];
-  var ciDate = dh.indexOf('date');
-  var ciTask = dh.indexOf('task_id');
+  var ciDate   = dh.indexOf('date');
+  var ciTask   = dh.indexOf('task_id');
+  var ciStatus = dh.indexOf('status'); // ヘッダから動的取得（列追加にも対応）
   if (ciDate < 0 || ciTask < 0) {
     throw new Error('ensureDailyRows: Daily に date / task_id 列が必要です。');
   }
@@ -1557,7 +1634,12 @@ function ensureDailyRowsForToday_(ss, todayStr, tz) {
   for (var j = 0; j < masters.length; j++) {
     var mid = masters[j].id;
     if (!have[mid]) {
-      toAppend.push([todayStr, mid, '×', '']); // 未入力はデフォルト☓（達成時に◯へ変更）
+      // ヘッダ列数に合わせた行を生成（列追加にも対応）
+      var newRow = new Array(dh.length).fill('');
+      newRow[ciDate] = todayStr;
+      newRow[ciTask] = mid;
+      if (ciStatus >= 0) newRow[ciStatus] = '×'; // デフォルト☓（ユーザーが◯にタップで変更）
+      toAppend.push(newRow);
     }
   }
 
@@ -1565,5 +1647,5 @@ function ensureDailyRowsForToday_(ss, todayStr, tz) {
 
   var last = dailySheet.getLastRow();
   if (last < 1) last = 1;
-  dailySheet.getRange(last + 1, 1, toAppend.length, 4).setValues(toAppend);
+  dailySheet.getRange(last + 1, 1, toAppend.length, dh.length).setValues(toAppend);
 }
