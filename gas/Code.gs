@@ -15,7 +15,10 @@
  *   ?format=json&date=yyyy-MM-dd&token=… … ダッシュボード用 DTO（token は当日プッシュで発行）
  *   上記以外 … LIFF 向け HTML（google.script.run で JSON 相当データを取得）
  *
- * 初回セットアップ: エディタから installDailyReminderTrigger を 1 回実行（毎日 17:40 JST に sendDailyReminder）。
+ * 初回セットアップ:
+ *   1. installDailyReminderTrigger を 1 回実行（毎日 17:40 JST に sendDailyReminder）
+ *   2. installMorningMessageTrigger を 1 回実行（毎日 9:00 JST に sendMorningMessage）
+ *   3. installCleanupTrigger を 1 回実行（毎週月曜 3:00 に cleanupOldDashTokens）
  * 変更後は gas で clasp push のあと、ウェブアプリを「新バージョン」で再デプロイすること。
  */
 
@@ -31,6 +34,25 @@ var TZ_ = 'Asia/Tokyo';
 
 function generateDashToken_() {
   return Utilities.getUuid().replace(/-/g, '');
+}
+
+/**
+ * 冪等なダッシュトークン発行。同じ dateStr に対して 2 回目以降は既存トークンを返す。
+ * 朝メッセージと夕方メッセージで同じ URL を共有できる。
+ * @private
+ */
+function issueDashToken_(dateStr) {
+  var props = PropertiesService.getScriptProperties();
+  var key = dashTokenPropKey_(dateStr);
+  var existing = props.getProperty(key);
+  if (existing) {
+    Logger.log('[issueDashToken_] 既存トークンを返却（' + dateStr + '）');
+    return existing;
+  }
+  var token = generateDashToken_();
+  props.setProperty(key, token);
+  Logger.log('[issueDashToken_] 新規トークンを発行（' + dateStr + '）');
+  return token;
 }
 
 function dashTokenPropKey_(dateStr) {
@@ -105,30 +127,172 @@ function installDailyReminderTrigger() {
 }
 
 /**
- * 同日に複数回 sendDailyReminder が実行された場合でも 1 回だけ送信する冪等ロック。
- * ScriptProperties の 'sent:{dateStr}' フラグで送信済みを管理し、cleanupOldDashTokens で定期削除する。
+ * 汎用冪等ロック。fullKey に対応する ScriptProperties フラグが立っていなければ fn を実行し、
+ * 実行後にフラグを立てる。重複実行（トリガー多重起動・手動実行の競合）を防止する。
+ * キーの命名規則:
+ *   'sent:{dateStr}'    … 夕方リマインダー送信済みフラグ
+ *   'morning:{dateStr}' … 朝メッセージ送信済みフラグ
+ * cleanupOldDashTokens で daysToKeep 日より古いフラグを週次削除する。
  * @private
  */
-function withDailyLock_(dateStr, fn) {
+function withLock_(fullKey, fn) {
   var lock = LockService.getScriptLock();
   try {
     lock.waitLock(8000);
   } catch (e) {
-    Logger.log('[withDailyLock_] ロック取得タイムアウト。スキップ（' + dateStr + '）');
+    Logger.log('[withLock_] ロック取得タイムアウト。スキップ（' + fullKey + '）');
     return;
   }
   try {
-    var key = 'sent:' + dateStr;
     var props = PropertiesService.getScriptProperties();
-    if (!props.getProperty(key)) {
+    if (!props.getProperty(fullKey)) {
       fn();
-      props.setProperty(key, '1');
+      props.setProperty(fullKey, '1');
     } else {
-      Logger.log('[withDailyLock_] 本日分は送信済みのためスキップ（' + dateStr + '）');
+      Logger.log('[withLock_] 実行済みのためスキップ（' + fullKey + '）');
     }
   } finally {
     lock.releaseLock();
   }
+}
+
+/**
+ * 毎朝 9:00（JST）に sendMorningMessage を実行するトリガを 1 本だけ設定する。
+ * GAS エディタから手動で 1 回実行すること。
+ */
+function installMorningMessageTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var toDel = [];
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'sendMorningMessage') {
+      toDel.push(triggers[i]);
+    }
+  }
+  for (var j = 0; j < toDel.length; j++) {
+    ScriptApp.deleteTrigger(toDel[j]);
+  }
+  ScriptApp.newTrigger('sendMorningMessage')
+    .timeBased()
+    .everyDays(1)
+    .atHour(9)
+    .nearMinute(0)
+    .inTimezone(TZ_)
+    .create();
+  Logger.log('[installMorningMessageTrigger] 朝9時トリガを登録しました。');
+}
+
+/**
+ * 朝9時に送る「今日の始まり」LINE メッセージ。
+ * withLock_ で 1 日 1 回だけ実行される。
+ * - Gemini は呼ばない（テンプレートのみ）
+ * - issueDashToken_ で冪等トークンを発行（夕方と URL を共有）
+ * - ensureDailyRowsForToday_ で当日 Daily 行を補完（冪等）
+ */
+function sendMorningMessage() {
+  var todayStr = Utilities.formatDate(new Date(), TZ_, 'yyyy-MM-dd');
+  withLock_('morning:' + todayStr, function() { sendMorningMessageImpl_(todayStr); });
+}
+
+function sendMorningMessageImpl_(todayStr) {
+  var props = PropertiesService.getScriptProperties();
+  var lineToken = props.getProperty('LINE_CHANNEL_ACCESS_TOKEN');
+  var userId    = props.getProperty('LINE_USER_ID');
+  if (!lineToken || !userId) {
+    throw new Error('LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID が未設定です。');
+  }
+
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+
+  // (1) 当日 Daily 行を補完（ensureDailyRowsForToday_ は冪等なので夕方と競合しない）
+  try {
+    ensureDailyRowsForToday_(ss, todayStr, TZ_);
+  } catch (e) {
+    Logger.log('[sendMorningMessage] ensureDailyRows 失敗（無視）: ' + String(e));
+  }
+
+  // (2) アクティブタスク数を Tasks シートから取得
+  var taskCount = countActiveTasks_(ss);
+
+  // (3) dashToken を先行発行（issueDashToken_ は冪等: 夕方と同じトークンを共有）
+  var dashToken = issueDashToken_(todayStr);
+
+  // (4) ダッシュボード URL
+  var liffUrl = (props.getProperty('LIFF_URL') || '').trim();
+  var dashUrl = '';
+  if (liffUrl) {
+    var q = 'date=' + encodeURIComponent(todayStr) + '&token=' + encodeURIComponent(dashToken);
+    var sep = liffUrl.indexOf('?') >= 0 ? '&' : '?';
+    dashUrl = liffUrl + sep + q;
+  }
+
+  // (5) 曜日ラベル
+  var DOW_JP = ['日', '月', '火', '水', '木', '金', '土'];
+  var dow = DOW_JP[new Date().getDay()];
+
+  // (6) 朝専用テンプレートメッセージ（Gemini なし、決定論的ローテーション）
+  var morningLine = getMorningLine_(todayStr);
+
+  // (7) テキスト組み立て
+  var lines = [];
+  lines.push('【やったかい】' + todayStr + '（' + dow + '）おはよ！');
+  lines.push('今日のタスク: ' + taskCount + '件');
+  lines.push('');
+  lines.push('ヒロ子より: 「' + morningLine + '」');
+  if (dashUrl) {
+    lines.push('');
+    lines.push('👉 ダッシュボード: ' + dashUrl);
+  }
+
+  linePushText_(lineToken, userId, lines.join('\n'));
+  Logger.log('[sendMorningMessage] 送信完了（' + todayStr + '）');
+}
+
+/**
+ * Tasks シートの active なタスク数を返す。
+ * @private
+ */
+function countActiveTasks_(ss) {
+  var sheet = ss.getSheetByName('Tasks');
+  if (!sheet) return 0;
+  var rows = sheet.getDataRange().getValues();
+  var h = rows[0];
+  var ixId     = h.indexOf('task_id');
+  var ixActive = h.indexOf('active');
+  if (ixId < 0) return 0;
+  var count = 0;
+  for (var r = 1; r < rows.length; r++) {
+    var id = String(rows[r][ixId] || '').trim();
+    if (!id) continue;
+    if (ixActive >= 0) {
+      var a = rows[r][ixActive];
+      if (a === false || String(a).toUpperCase() === 'FALSE') continue;
+    }
+    count++;
+  }
+  return count;
+}
+
+/**
+ * 朝メッセージ用テンプレート（Gemini 不使用）。
+ * dayHash_ で日付ごとに決定論的ローテーション。
+ * @private
+ */
+function getMorningLine_(dateStr) {
+  var lines = [
+    'てか今日こそ全部やりきろ！夕方に◯で埋めよっ😤',
+    '今日も小さく積み上げよ。ちりつもがマジ最強✨',
+    '朝イチにこれ見てる自分えらい👏 いってらっしゃい！',
+    'タスクはこわくない、始めたら勝ちだから💅',
+    'もう今日の勝ち筋は決まってる。あとはやるだけ🔥',
+    '昨日の自分より一歩だけ前に進めばいい。それだけ🌱',
+    'てかあたし今日もやるっしょ！絶対できる💪',
+  ];
+  return lines[dayHash_(dateStr) % lines.length];
+}
+
+/** withLock_ の後方互換ラッパー（夕方リマインダー用）*/
+function withDailyLock_(dateStr, fn) {
+  withLock_('sent:' + dateStr, fn);
 }
 
 function sendDailyReminder() {
@@ -162,8 +326,8 @@ function sendDailyReminderImpl_(todayStr) {
   }
 
   var lines = formatDailyReminderLines_(model);
-  var dashToken = generateDashToken_();
-  PropertiesService.getScriptProperties().setProperty(dashTokenPropKey_(model.date), dashToken);
+  // issueDashToken_ は冪等: 朝メッセージで先行発行済みのトークンがあれば同じ値を返す
+  var dashToken = issueDashToken_(model.date);
 
   var liffUrl = (props.getProperty('LIFF_URL') || '').trim();
   if (liffUrl) {
@@ -1521,13 +1685,15 @@ function cleanupOldDashTokens(daysToKeep) {
   var props = PropertiesService.getScriptProperties();
   var all = props.getProperties();
   var deleted = 0;
+  // 管理対象プレフィックス: dashToken / 夕方フラグ / 朝フラグ
+  var PREFIXES = [DASH_TOKEN_PROP_PREFIX_, 'sent:', 'morning:'];
   for (var key in all) {
-    var isToken = key.indexOf(DASH_TOKEN_PROP_PREFIX_) === 0;
-    var isSent = key.indexOf('sent:') === 0;
-    if (!isToken && !isSent) continue;
-    var dateStr = isToken
-      ? key.slice(DASH_TOKEN_PROP_PREFIX_.length)
-      : key.slice('sent:'.length);
+    var matchedPrefix = null;
+    for (var pi = 0; pi < PREFIXES.length; pi++) {
+      if (key.indexOf(PREFIXES[pi]) === 0) { matchedPrefix = PREFIXES[pi]; break; }
+    }
+    if (!matchedPrefix) continue;
+    var dateStr = key.slice(matchedPrefix.length);
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
     if (new Date(dateStr).getTime() < cutoff) {
       props.deleteProperty(key);
