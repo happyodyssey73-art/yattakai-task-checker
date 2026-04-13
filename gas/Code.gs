@@ -195,7 +195,13 @@ function buildDailyDashboardModel_(ss, dateStr, tz, opts) {
 
   var denom = todays.length;
   var pct = Math.round((done / denom) * 100);
-  var mood = moodMessage_(pct);
+  // §3.3.1: 全タスクが未記入の場合は閾値テーブルとは別扱い（夕方時点でまだ記入前のケース）
+  var mood;
+  if (done === 0 && notDone === 0 && unset > 0) {
+    mood = 'まだ記入されていません';
+  } else {
+    mood = moodMessage_(pct);
+  }
   var taskMap = buildTaskLabelMap_(tasksSheet);
 
   var tasksOut = [];
@@ -641,10 +647,8 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '</head><body>' +
     '<p id="st"></p>' +
     '<div id="app"></div>' +
-    '<div class="footer">' +
-    '<a id="jl" href="#" target="_blank" rel="noopener noreferrer">JSON を別タブで開く</a>' +
-    (escapedHint ? '<br><span>' + escapedHint + '</span>' : '') +
-    '</div>' +
+    // エラー・案内メッセージのみ表示。JSON リンクは内部実装情報のためエンドユーザーに非表示（§1.3.1）
+    (escapedHint ? '<div class="footer"><span>' + escapedHint + '</span></div>' : '') +
     '<script>' + js + '<\/script>' +
     '</body></html>';
 
@@ -694,13 +698,25 @@ function buildSection2_(ss, todayStr, achievementPercent, moodMessage) {
     mood_message: moodMessage,
     attribution: attribution,
   };
-  var ichisanTpl = '達成率{{achievement_percent}}％か…「{{quote}}」という言葉を胸に刻んでおくんじゃ、ヒロ子ちゃん。';
-  var hirokoTpl = '達成率{{achievement_percent}}%！「{{quote}}」か〜、マジ刺さるじゃん。明日もあたし頑張るっしょ！';
+  // §5.1 フォロートーン: 達成率の数値をセリフ冒頭で突き付けない。今日への励ましを軸にする。
+  var ichisanTpl = '「{{quote}}」という言葉を胸に刻んでおくんじゃ、ヒロ子ちゃん。ワシも共に見守っておるぞ。';
+  var hirokoTpl = '「{{quote}}」か〜、マジ刺さるじゃん！今日まだ時間あるし、あたし動くっしょ！';
+  var ichisanText = substituteTemplate_(ichisanTpl, vars);
+  var hirokoText = substituteTemplate_(hirokoTpl, vars);
+  // 補間後バリデーション（§6.2.1）: 未置換プレースホルダー・空文字は即フォールバック
+  try {
+    assertInterpolated_(ichisanText, 'ichisan');
+    assertInterpolated_(hirokoText, 'hiroko');
+  } catch (interpErr) {
+    Logger.log('[section2] テンプレ補間エラー: ' + interpErr.message);
+    ichisanText = 'ワシの言葉を借りるならば、一歩踏み出すことが全ての始まりじゃ。';
+    hirokoText = 'あたし今日まだ諦めてないっしょ！やれることからやってくっ！';
+  }
   var dto = {
     quote: quoteText,
     quote_attribution: attribution,
-    ichisan: substituteTemplate_(ichisanTpl, vars),
-    hiroko: substituteTemplate_(hirokoTpl, vars),
+    ichisan: ichisanText,
+    hiroko: hirokoText,
     ichisan_image: avatars.ichisan_image,
     hiroko_image: avatars.hiroko_image,
   };
@@ -709,8 +725,10 @@ function buildSection2_(ss, todayStr, achievementPercent, moodMessage) {
 
 /** dto から LINE 用テキストブロックを組み立てるヘルパー */
 function buildSection2DtoAndBlock_(dto, sourceLbl) {
+  // 経路ラベル（テンプレ/Gemini）はログのみ。LINE 本文には出さない（§1.3.1）
+  Logger.log('[section2] route=' + (sourceLbl || ''));
   var lines = [];
-  lines.push('【今日の一言（■2）' + sourceLbl + '】');
+  lines.push('【今日の一言】');
   lines.push('「' + dto.quote + '」');
   if (dto.quote_attribution) lines.push('（出典: ' + dto.quote_attribution + '）');
   lines.push('');
@@ -912,6 +930,19 @@ function substituteTemplate_(tpl, vars) {
   return out;
 }
 
+/**
+ * 補間後テキストの検証（§6.2.1）。
+ * 未置換の {{…}} が残っているか、空文字の場合に例外を投げる。
+ */
+function assertInterpolated_(text, name) {
+  if (/\{\{[^}]+\}\}/.test(text)) {
+    throw new Error('未置換プレースホルダーが残っています: ' + name);
+  }
+  if (!text || text.trim().length === 0) {
+    throw new Error('補間後テキストが空です: ' + name);
+  }
+}
+
 /** §5.5.1 達成率 → 表情ファイル名（GAS 側で決定） */
 function pickAvatarsByPercent_(percent) {
   if (percent >= 100) {
@@ -998,6 +1029,53 @@ function buildTaskLabelMap_(tasksSheet) {
     map[id] = shortv || titlev || id;
   }
   return map;
+}
+
+/**
+ * 付録 A.2: 古いダッシュトークンと送信済みフラグを削除（§ScriptProperties クリーンアップ）。
+ * GAS ScriptProperties はプロパティ数 500件上限があるため、週次トリガ等で定期実行する。
+ * エディタから手動で実行するか、installCleanupTrigger を一度実行してトリガを登録する。
+ * @param {number} daysToKeep 保持日数（デフォルト 90日）
+ */
+function cleanupOldDashTokens(daysToKeep) {
+  daysToKeep = typeof daysToKeep === 'number' ? daysToKeep : 90;
+  var cutoff = Date.now() - daysToKeep * 86400 * 1000;
+  var props = PropertiesService.getScriptProperties();
+  var all = props.getProperties();
+  var deleted = 0;
+  for (var key in all) {
+    var isToken = key.indexOf(DASH_TOKEN_PROP_PREFIX_) === 0;
+    var isSent = key.indexOf('sent:') === 0;
+    if (!isToken && !isSent) continue;
+    var dateStr = isToken
+      ? key.slice(DASH_TOKEN_PROP_PREFIX_.length)
+      : key.slice('sent:'.length);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
+    if (new Date(dateStr).getTime() < cutoff) {
+      props.deleteProperty(key);
+      deleted++;
+    }
+  }
+  Logger.log('[cleanupOldDashTokens] 削除件数=' + deleted + ' (daysToKeep=' + daysToKeep + ')');
+}
+
+/**
+ * cleanupOldDashTokens を週次（毎週月曜 3:00）で実行するトリガを登録する。
+ * エディタから 1 回だけ手動実行すること。
+ */
+function installCleanupTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'cleanupOldDashTokens') {
+      ScriptApp.deleteTrigger(triggers[i]);
+    }
+  }
+  ScriptApp.newTrigger('cleanupOldDashTokens')
+    .timeBased()
+    .onWeekDay(ScriptApp.WeekDay.MONDAY)
+    .atHour(3)
+    .create();
+  Logger.log('[installCleanupTrigger] 週次クリーンアップトリガを登録しました。');
 }
 
 function linePushText_(token, userId, text) {
