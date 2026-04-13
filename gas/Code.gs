@@ -493,6 +493,90 @@ function getDashboardJsonForClient(dateStr, clientToken) {
 }
 
 /**
+ * LIFF クライアントから google.script.run で呼ぶタスク状態更新 RPC。
+ * 名前末尾に _ を付けない（google.script.run の制約）。
+ *
+ * @param {string} dateStr     'YYYY-MM-DD'
+ * @param {string} clientToken sendDailyReminder で発行したトークン
+ * @param {string} taskId      'task_001' など
+ * @param {string} newStatus   'done' | 'not_done'
+ * @returns {object} ok:true 時は toPublicDashboardJson_ 相当の更新後モデル
+ *                   ok:false 時は { ok: false, error: string }
+ */
+function updateTaskStatus(dateStr, clientToken, taskId, newStatus) {
+  // 1. 入力バリデーション（unset への書き戻しは UI 仕様上受け付けない）
+  if (newStatus !== 'done' && newStatus !== 'not_done') {
+    return { ok: false, error: 'INVALID_STATUS' };
+  }
+  var d = dateStr && String(dateStr).trim();
+  if (!d || !/^\d{4}-\d{2}-\d{2}$/.test(d)) {
+    return { ok: false, error: 'INVALID_DATE' };
+  }
+  var tid = taskId && String(taskId).trim();
+  if (!tid) {
+    return { ok: false, error: 'INVALID_TASK_ID' };
+  }
+
+  // 2. トークン検証（getDashboardJsonForClient と同じ経路・同じ関数で一元管理）
+  var gate = assertDashboardToken_(d, clientToken);
+  if (!gate.ok) {
+    return { ok: false, error: gate.error };
+  }
+
+  // 3. LockService で競合防止（連打・LIFF 再読み込み重複の対策）
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+  } catch (e) {
+    return { ok: false, error: 'LOCK_TIMEOUT' };
+  }
+
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var dailySheet = ss.getSheetByName('Daily');
+    if (!dailySheet) return { ok: false, error: 'NO_DAILY_SHEET' };
+
+    var data = dailySheet.getDataRange().getValues();
+    var header = data[0];
+    var colDate   = header.indexOf('date');
+    var colTaskId = header.indexOf('task_id');
+    var colStatus = header.indexOf('status');
+    var colUpdAt  = header.indexOf('updated_at');
+
+    if (colDate < 0 || colTaskId < 0 || colStatus < 0) {
+      return { ok: false, error: 'MISSING_COLUMNS' };
+    }
+
+    var tz = Session.getScriptTimeZone();
+    var written = false;
+    for (var i = 1; i < data.length; i++) {
+      var rowDate   = formatDateCell_(data[i][colDate], tz);
+      var rowTaskId = String(data[i][colTaskId] || '').trim();
+      if (rowDate === d && rowTaskId === tid) {
+        dailySheet.getRange(i + 1, colStatus + 1).setValue(newStatus === 'done' ? '◯' : '×');
+        if (colUpdAt >= 0) {
+          dailySheet.getRange(i + 1, colUpdAt + 1).setValue(
+            Utilities.formatDate(new Date(), tz, "yyyy-MM-dd'T'HH:mm:ss")
+          );
+        }
+        written = true;
+        break;
+      }
+    }
+
+    if (!written) {
+      return { ok: false, error: 'TASK_NOT_FOUND' };
+    }
+
+    // 書き込み後の最新集計を返す → クライアントがドーナツ・カテゴリバー・達成率を差分更新
+    var model = buildDailyDashboardModel_(ss, d, tz, {});
+    return toPublicDashboardJson_(model);
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
  * HTML 版ダッシュボード（LIFF）。
  * google.script.run で getDashboardJsonForClient を呼び、ドーナツ SVG・カテゴリバー・■2 を描画。
  * 変更後: clasp push → ウェブアプリ「新バージョン」で再デプロイ。
@@ -525,10 +609,17 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '.bn{background:#FECACA;}',
     '.bu{background:#E2E8F0;}',
     'ul{list-style:none;padding:0;margin:0;}',
-    '.ti{padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:6px;border:1px solid #E2E8F0;background:#fff;}',
-    '.td{color:#059669;background:#F0FDF4;border-color:#A7F3D0;}',
-    '.tn{color:#DC2626;background:#FEF2F2;border-color:#FECACA;}',
-    '.tu{color:#94A3B8;}',
+    '.ti{padding:8px 12px;border-radius:8px;font-size:13px;margin-bottom:6px;border:1px solid #E2E8F0;background:#fff;display:flex;align-items:center;gap:8px;}',
+    '.tlbl{flex:1;min-width:0;word-break:break-all;}',
+    '.tbtn{border:none;border-radius:8px;padding:6px 11px;font-size:16px;cursor:pointer;background:#F1F5F9;color:#94A3B8;transition:background .12s,color .12s;line-height:1;min-width:38px;flex-shrink:0;}',
+    '.tbtn.a-done{background:#059669;color:#fff;}',
+    '.tbtn.a-nd{background:#DC2626;color:#fff;}',
+    '.tbtn:disabled{opacity:.4;cursor:not-allowed;}',
+    '.td{border-color:#A7F3D0;background:#F0FDF4;}',
+    '.tn{border-color:#FECACA;background:#FEF2F2;}',
+    '.tu{border-color:#E2E8F0;}',
+    '.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1E293B;color:#fff;padding:8px 20px;border-radius:20px;font-size:13px;opacity:0;transition:opacity .3s;pointer-events:none;z-index:999;white-space:nowrap;}',
+    '.toast.show{opacity:1;}',
     '.sec2{background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:14px 16px;margin-top:4px;}',
     '.qt{font-size:14px;font-weight:700;color:#1E293B;margin:0 0 4px;line-height:1.6;}',
     '.qa{font-size:11px;color:#94A3B8;margin:0 0 10px;}',
@@ -546,11 +637,9 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
   var js = [
     '(function(){',
     'var D=' + defaultDateJson + ',T=' + defaultTokenJson + ',AV=' + JSON.stringify(avatarBaseUrl) + ',NS="http://www.w3.org/2000/svg";',
-    'var root=document.getElementById("app"),stEl=document.getElementById("st"),linkEl=document.getElementById("jl");',
+    'var root=document.getElementById("app"),stEl=document.getElementById("st");',
     'var qs=new URLSearchParams(window.location.search);',
     'var date=(qs.get("date")||"").trim()||D,token=(qs.get("token")||"").trim()||T;',
-    'var u=new URL(window.location.href);u.searchParams.set("format","json");u.searchParams.set("date",date);if(token)u.searchParams.set("token",token);',
-    'if(linkEl)linkEl.href=u.toString();',
     'stEl.textContent="読み込み中…";while(root.firstChild)root.removeChild(root.firstChild);',
     'function h(tag,text,cls){var e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;}',
     'function svgE(tag){return document.createElementNS(NS,tag);}',
@@ -559,7 +648,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     'function sc(c){var s=String(c||"#94A3B8").trim();return/^(#[0-9a-fA-F]{3,8}|rgb[a]?\\([^)]*\\)|[a-zA-Z]{2,30})$/.test(s)?s:"#94A3B8";}',
     // Donut SVG builder (§3.5: segment = category task-count share)
     'function mkDonut(cats,total,pct){',
-    '  var wrap=document.createElement("div");wrap.className="donut-wrap";',
+    '  var wrap=document.createElement("div");wrap.className="donut-wrap";wrap.id="donut-wrap";',
     '  var svg=svgE("svg");sa(svg,"viewBox","0 0 180 180");sa(svg,"class","donut-svg");',
     '  var circ=2*Math.PI*62,cum=0;',
     '  if(total>0&&cats&&cats.length){',
@@ -587,27 +676,83 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '    row.appendChild(bar);}',
     '  return row;',
     '}',
+    // showToast
+    'function showToast(msg){var t=document.getElementById("toast");if(!t)return;t.textContent=msg;t.className="toast show";setTimeout(function(){t.className="toast";},2500);}',
+    // applyTaskStyle: li のクラスとボタンのアクティブ状態を同期
+    'function applyTaskStyle(li,st){',
+    '  li.className="ti "+(st==="done"?"td":st==="not_done"?"tn":"tu");',
+    '  var btns=li.querySelectorAll(".tbtn");',
+    '  for(var i=0;i<btns.length;i++){var s=btns[i].dataset.status;btns[i].className="tbtn"+(s===st?" "+(st==="done"?"a-done":"a-nd"):"");}',
+    '}',
+    // mkStatusBtn: closure-in-loop を避けるため独立関数
+    'function mkStatusBtn(s,taskId,li){',
+    '  var btn=document.createElement("button");btn.dataset.status=s;',
+    '  btn.textContent=s==="done"?"◯":"✕";',
+    '  btn.addEventListener("click",function(){onTaskToggle(taskId,s,li);});',
+    '  return btn;',
+    '}',
+    // mkTaskRow: ◯/✕ ボタン付きタスク行を生成
+    'function mkTaskRow(t){',
+    '  var li=document.createElement("li");',
+    '  li.dataset.taskId=t.task_id;li.dataset.status=t.status||"unset";',
+    '  var lbl=document.createElement("span");lbl.className="tlbl";lbl.textContent=t.label;',
+    '  li.appendChild(lbl);',
+    '  li.appendChild(mkStatusBtn("done",t.task_id,li));',
+    '  li.appendChild(mkStatusBtn("not_done",t.task_id,li));',
+    '  applyTaskStyle(li,t.status||"unset");',
+    '  return li;',
+    '}',
+    // onTaskToggle: 楽観的更新 → GAS RPC → 失敗時ロールバック
+    'function onTaskToggle(taskId,newStatus,li){',
+    '  var prevStatus=li.dataset.status;',
+    '  if(prevStatus===newStatus)return;',
+    '  var btns=li.querySelectorAll(".tbtn");',
+    '  for(var i=0;i<btns.length;i++)btns[i].disabled=true;',
+    '  li.dataset.status=newStatus;applyTaskStyle(li,newStatus);',
+    '  google.script.run',
+    '    .withSuccessHandler(function(res){',
+    '      for(var i=0;i<btns.length;i++)btns[i].disabled=false;',
+    '      if(!res||!res.ok){li.dataset.status=prevStatus;applyTaskStyle(li,prevStatus);showToast("更新に失敗しました");return;}',
+    '      updateSummary(res);',
+    '    })',
+    '    .withFailureHandler(function(){',
+    '      for(var i=0;i<btns.length;i++)btns[i].disabled=false;',
+    '      li.dataset.status=prevStatus;applyTaskStyle(li,prevStatus);showToast("通信エラーが発生しました");',
+    '    })',
+    '    .updateTaskStatus(date,token,taskId,newStatus);',
+    '}',
+    // updateSummary: タスクトグル後にドーナツ・達成率・カテゴリを差分更新
+    'function updateSummary(data){',
+    '  var c=data.counts||{};',
+    '  var moodEl=document.getElementById("mood-lbl");if(moodEl)moodEl.textContent=data.mood_message||"";',
+    '  var clblEl=document.getElementById("clbl");',
+    '  if(clblEl)clblEl.textContent="達成 "+(c.done||0)+" / 全体 "+(c.total||0)+"、未 "+(c.not_done||0)+"、未記入 "+(c.unset||0);',
+    '  var oldD=document.getElementById("donut-wrap");',
+    '  if(oldD){var newD=mkDonut(data.categories||[],c.total||0,data.achievement_percent);oldD.parentNode.replaceChild(newD,oldD);}',
+    '  var catSec=document.getElementById("catsec");',
+    '  if(catSec&&data.categories){while(catSec.firstChild)catSec.removeChild(catSec.firstChild);catSec.appendChild(h("h2","カテゴリ別"));for(var ci=0;ci<data.categories.length;ci++)catSec.appendChild(mkCatBar(data.categories[ci]));}',
+    '}',
     // Main paint
     'function paint(data){',
     '  if(!data||data.ok===false){stEl.textContent="エラー: "+(data&&data.error?data.error:"unknown")+(data&&data.date?" ("+data.date+")":"");return;}',
     '  stEl.textContent="";while(root.firstChild)root.removeChild(root.firstChild);',
     '  var frag=document.createDocumentFragment();',
-    // Top: date + mood
+    // Top: date + mood（mood に id を付けて updateSummary から差分更新できるようにする）
     '  var top=document.createElement("div");top.className="top";',
-    '  top.appendChild(h("p",data.date||"","dlbl"));top.appendChild(h("p",data.mood_message||"","mlbl"));frag.appendChild(top);',
-    // Donut
+    '  top.appendChild(h("p",data.date||"","dlbl"));',
+    '  var moodP=h("p",data.mood_message||"","mlbl");moodP.id="mood-lbl";top.appendChild(moodP);',
+    '  frag.appendChild(top);',
+    // Donut（mkDonut 内で id="donut-wrap" を付与済み）
     '  var cats=data.categories||[],c=data.counts||{};',
     '  frag.appendChild(mkDonut(cats,c.total||0,data.achievement_percent));',
-    '  frag.appendChild(h("p","達成 "+(c.done||0)+" / 全体 "+(c.total||0)+"、未 "+(c.not_done||0)+"、未記入 "+(c.unset||0),"clbl"));',
-    // Category bars
-    '  if(cats.length>0){var cs=document.createElement("div");cs.className="catsec";cs.appendChild(h("h2","カテゴリ別"));',
+    '  var clblP=h("p","達成 "+(c.done||0)+" / 全体 "+(c.total||0)+"、未 "+(c.not_done||0)+"、未記入 "+(c.unset||0),"clbl");clblP.id="clbl";frag.appendChild(clblP);',
+    // Category bars（id="catsec" を付与して updateSummary から差分更新）
+    '  if(cats.length>0){var cs=document.createElement("div");cs.className="catsec";cs.id="catsec";cs.appendChild(h("h2","カテゴリ別"));',
     '    for(var ci=0;ci<cats.length;ci++)cs.appendChild(mkCatBar(cats[ci]));frag.appendChild(cs);}',
-    // Tasks
+    // Tasks（◯/✕ ボタン付き）
     '  var ts=document.createElement("div");ts.className="tasksec";ts.appendChild(h("h2","タスク"));',
     '  var ul=document.createElement("ul"),tasks=data.tasks||[];',
-    '  for(var ti=0;ti<tasks.length;ti++){var t=tasks[ti];',
-    '    var cls="ti "+(t.status==="done"?"td":t.status==="not_done"?"tn":"tu");',
-    '    ul.appendChild(h("li",t.label+" "+t.status_mark,cls));}',
+    '  for(var ti=0;ti<tasks.length;ti++)ul.appendChild(mkTaskRow(tasks[ti]));',
     '  ts.appendChild(ul);frag.appendChild(ts);',
     // Section 2 — avatar image + bubble layout
     '  var s2=data.section2||{};var sec=document.createElement("div");sec.className="sec2";',
@@ -647,6 +792,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '</head><body>' +
     '<p id="st"></p>' +
     '<div id="app"></div>' +
+    '<div class="toast" id="toast"></div>' +
     // エラー・案内メッセージのみ表示。JSON リンクは内部実装情報のためエンドユーザーに非表示（§1.3.1）
     (escapedHint ? '<div class="footer"><span>' + escapedHint + '</span></div>' : '') +
     '<script>' + js + '<\/script>' +
