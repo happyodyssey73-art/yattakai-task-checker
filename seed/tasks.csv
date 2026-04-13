@@ -1,5 +1,9 @@
 task_id,title,display_short,category_id,active,sort_order
 t_001,筋トレ20分,筋トレ,health,TRUE,10
-t_002,AIスクールの勉強30分,AIスクール,study,TRUE,20
-t_003,株のチェック（セクター・国）,株チェック,money_work,TRUE,30
-t_004,スマートノート・WOOP・0秒思考,ノート,study,TRUE,40
+t_005,残像トレーニング,残像,health,TRUE,20
+t_008,コンビニによらない,コンビニ×,health,TRUE,30
+t_002,AIスクールの勉強30分,AIスクール,study,TRUE,40
+t_006,タイピング練習,タイピング,study,TRUE,50
+t_004,スマートノート・WOOP・0秒思考,ノート,study,TRUE,60
+t_003,株のチェック（セクター・国の強さ）,株チェック,money_work,TRUE,70
+t_007,ニュースのチェック,ニュース,money_work,TRUE,80
