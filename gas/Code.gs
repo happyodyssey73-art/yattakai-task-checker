@@ -213,13 +213,8 @@ function buildDailyDashboardModel_(ss, dateStr, tz, opts) {
 
   var denom = todays.length;
   var pct = Math.round((done / denom) * 100);
-  // §3.3.1: 全タスクが未記入の場合は閾値テーブルとは別扱い（夕方時点でまだ記入前のケース）
-  var mood;
-  if (done === 0 && notDone === 0 && unset > 0) {
-    mood = 'まだ記入されていません';
-  } else {
-    mood = moodMessage_(pct);
-  }
+  // 空欄は not_done として扱うため unset は常に 0 → 達成率でそのままメッセージを決定
+  var mood = moodMessage_(pct);
   var taskMap = buildTaskLabelMap_(tasksSheet);
 
   var tasksOut = [];
@@ -353,9 +348,7 @@ function formatDailyReminderLines_(model) {
   var lines = [];
   lines.push('【やったかい】' + model.date);
   lines.push('達成率 ' + model.achievement_percent + '%　' + model.mood_message);
-  lines.push(
-    '（達成 ' + c.done + ' / 全体 ' + c.total + '、未 ' + c.not_done + '、未記入 ' + c.unset + '）'
-  );
+  lines.push('（達成 ' + c.done + ' / 全体 ' + c.total + '、未 ' + c.not_done + '）');
   lines.push('');
   for (var j = 0; j < model.tasks.length; j++) {
     var t = model.tasks[j];
@@ -813,7 +806,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '  var c=data.counts||{};',
     '  var moodEl=document.getElementById("mood-lbl");if(moodEl)moodEl.textContent=data.mood_message||"";',
     '  var clblEl=document.getElementById("clbl");',
-    '  if(clblEl)clblEl.textContent="達成 "+(c.done||0)+" / 全体 "+(c.total||0)+"、未 "+(c.not_done||0)+"、未記入 "+(c.unset||0);',
+    '  if(clblEl)clblEl.textContent="達成 "+(c.done||0)+" / 全体 "+(c.total||0)+"、未 "+(c.not_done||0);',
     '  var oldD=document.getElementById("donut-wrap");',
     '  if(oldD){var newD=mkDonut(data.categories||[],c.total||0,data.achievement_percent);oldD.parentNode.replaceChild(newD,oldD);}',
     '  var catSec=document.getElementById("catsec");',
@@ -832,7 +825,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     // Donut（mkDonut 内で id="donut-wrap" を付与済み）
     '  var cats=data.categories||[],c=data.counts||{};',
     '  frag.appendChild(mkDonut(cats,c.total||0,data.achievement_percent));',
-    '  var clblP=h("p","達成 "+(c.done||0)+" / 全体 "+(c.total||0)+"、未 "+(c.not_done||0)+"、未記入 "+(c.unset||0),"clbl");clblP.id="clbl";frag.appendChild(clblP);',
+    '  var clblP=h("p","達成 "+(c.done||0)+" / 全体 "+(c.total||0)+"、未 "+(c.not_done||0),"clbl");clblP.id="clbl";frag.appendChild(clblP);',
     // Category bars（id="catsec" を付与して updateSummary から差分更新）
     '  if(cats.length>0){var cs=document.createElement("div");cs.className="catsec";cs.id="catsec";cs.appendChild(h("h2","カテゴリ別"));',
     '    for(var ci=0;ci<cats.length;ci++)cs.appendChild(mkCatBar(cats[ci]));frag.appendChild(cs);}',
@@ -1217,12 +1210,12 @@ function moodMessage_(percent) {
 }
 
 function normalizeStatus_(cell) {
-  if (cell === null || cell === undefined) return 'unset';
+  if (cell === null || cell === undefined) return 'not_done';
   var s = String(cell).trim();
-  if (s === '') return 'unset';
+  if (s === '') return 'not_done';
   if (s === '◯' || s === '○' || s === '〇' || s === '✓' || s === '✔') return 'done';
   if (s === '×' || s === '✕' || s === 'x' || s === 'X') return 'not_done';
-  return 'unset';
+  return 'not_done'; // 不明な値も not_done として扱う
 }
 
 function statusMark_(st) {
@@ -1564,7 +1557,7 @@ function ensureDailyRowsForToday_(ss, todayStr, tz) {
   for (var j = 0; j < masters.length; j++) {
     var mid = masters[j].id;
     if (!have[mid]) {
-      toAppend.push([todayStr, mid, '', '']);
+      toAppend.push([todayStr, mid, '×', '']); // 未入力はデフォルト☓（達成時に◯へ変更）
     }
   }
 
