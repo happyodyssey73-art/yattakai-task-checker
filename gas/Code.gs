@@ -370,6 +370,7 @@ function doGet(e) {
   e = e || {};
   var p = e.parameter || {};
   var tz = Session.getScriptTimeZone();
+
   var rawDate = (p.date && String(p.date).trim()) || '';
   var format = (p.format && String(p.format).trim().toLowerCase()) || '';
   var tokenParam = p.token != null && p.token !== undefined ? String(p.token) : '';
