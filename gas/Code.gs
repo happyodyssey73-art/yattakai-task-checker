@@ -22,6 +22,10 @@
 /** 当日ダッシュ用トークンをスクリプトプロパティに保存するキー接頭辞 */
 var DASH_TOKEN_PROP_PREFIX_ = 'yattakai_dash_token_';
 
+/** CacheService キー接頭辞と TTL（30 分）*/
+var CACHE_KEY_PREFIX_ = 'yattakai_dash_v1_';
+var CACHE_TTL_SEC_    = 1800;
+
 function generateDashToken_() {
   return Utilities.getUuid().replace(/-/g, '');
 }
@@ -112,6 +116,20 @@ function sendDailyReminder() {
   if (!model.ok) {
     linePushText_(token, userId, '【やったかい】' + todayStr + ' の Daily 行がありません。');
     return;
+  }
+
+  // LIFF を即時に開けるようキャッシュをウォームアップ
+  // （sendDailyReminder 内で既に Gemini を呼んだ結果を再利用するため追加コストなし）
+  try {
+    var warmPub = toPublicDashboardJson_(model);
+    CacheService.getScriptCache().put(
+      CACHE_KEY_PREFIX_ + todayStr,
+      JSON.stringify(warmPub),
+      CACHE_TTL_SEC_
+    );
+    Logger.log('[sendDailyReminder] キャッシュをウォームアップしました（' + todayStr + '）');
+  } catch (warnErr) {
+    Logger.log('[sendDailyReminder] キャッシュウォームアップ失敗（無視）: ' + String(warnErr));
   }
 
   var lines = formatDailyReminderLines_(model);
@@ -216,7 +234,14 @@ function buildDailyDashboardModel_(ss, dateStr, tz, opts) {
     });
   }
 
-  var section2 = buildSection2_(ss, dateStr, pct, mood);
+  // opts.skipSection2=true のとき Gemini / Quotes 呼び出しをスキップ（タスクトグル後の高速集計用）
+  var section2Dto = null;
+  var section2TextBlock = '';
+  if (!opts.skipSection2) {
+    var s2 = buildSection2_(ss, dateStr, pct, mood);
+    section2Dto = s2.dto;
+    section2TextBlock = s2.textBlock;
+  }
   var categories = buildCategoryStatsMap_(ss, tasksSheet, tasksOut);
 
   return {
@@ -232,8 +257,8 @@ function buildDailyDashboardModel_(ss, dateStr, tz, opts) {
     },
     tasks: tasksOut,
     categories: categories,
-    section2: section2.dto,
-    section2TextBlock: section2.textBlock,
+    section2: section2Dto,
+    section2TextBlock: section2TextBlock,
   };
 }
 
@@ -419,9 +444,9 @@ function doGet(e) {
   var todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
   var ensureRows = dateStr === todayStr;
 
-  var model;
+  var pubJson;
   try {
-    model = buildDailyDashboardModel_(ss, dateStr, tz, { ensureTodayRows: ensureRows });
+    pubJson = getCachedDashboard_(ss, dateStr, tz, { ensureTodayRows: ensureRows });
   } catch (err) {
     if (format === 'json') {
       return jsonOutput_({ ok: false, error: 'build_failed', message: String(err.message || err) });
@@ -430,14 +455,13 @@ function doGet(e) {
   }
 
   if (format === 'json') {
-    return jsonOutput_(toPublicDashboardJson_(model));
+    return jsonOutput_(pubJson);
   }
 
-  var hint =
-    model.ok === true
-      ? '上の内容はスプレッドシートと同じ JSON から取得しています。'
-      : '（この日の Daily 行がありません）';
-  return htmlMessage_(hint, dateStr, format, model.ok === true ? model : null, tokenParam);
+  var hint = pubJson.ok
+    ? '上の内容はスプレッドシートと同じ JSON から取得しています。'
+    : '（この日の Daily 行がありません）';
+  return htmlMessage_(hint, dateStr, format, pubJson.ok ? pubJson : null, tokenParam);
 }
 
 /** JSON レスポンス（LIFF の fetch 用） */
@@ -486,11 +510,59 @@ function getDashboardJsonForClient(dateStr, clientToken) {
   var todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
   var ensureRows = d === todayStr;
   try {
-    var model = buildDailyDashboardModel_(ss, d, tz, { ensureTodayRows: ensureRows });
-    return toPublicDashboardJson_(model);
+    return getCachedDashboard_(ss, d, tz, { ensureTodayRows: ensureRows });
   } catch (err2) {
     return { ok: false, error: 'build_failed', message: String(err2.message || err2) };
   }
+}
+
+/**
+ * CacheService を使ってダッシュボード JSON を返す共通ヘルパー。
+ * キャッシュヒット時はシート読み込みをスキップして即返却する。
+ * キャッシュミス時は buildDailyDashboardModel_ → toPublicDashboardJson_ してキャッシュに書く。
+ *
+ * opts は buildDailyDashboardModel_ のオプションと同じ（ensureTodayRows / skipSection2 等）。
+ * opts.bypassCache=true のときはキャッシュを無視して必ず再読み込みする（デバッグ用）。
+ * @private
+ */
+function getCachedDashboard_(ss, dateStr, tz, opts) {
+  opts = opts || {};
+  var key = CACHE_KEY_PREFIX_ + dateStr;
+  if (!opts.bypassCache) {
+    try {
+      var hit = CacheService.getScriptCache().get(key);
+      if (hit) {
+        var parsed = JSON.parse(hit);
+        Logger.log('[cache HIT] ' + key);
+        return parsed;
+      }
+    } catch (e) {
+      Logger.log('[cache] get/parse error（無視）: ' + String(e));
+    }
+  }
+  var model = buildDailyDashboardModel_(ss, dateStr, tz, opts);
+  var pub = toPublicDashboardJson_(model);
+  if (pub.ok) {
+    try {
+      CacheService.getScriptCache().put(key, JSON.stringify(pub), CACHE_TTL_SEC_);
+      Logger.log('[cache SET] ' + key + ' ttl=' + CACHE_TTL_SEC_ + 's');
+    } catch (e) {
+      Logger.log('[cache] put error（無視）: ' + String(e));
+    }
+  }
+  return pub;
+}
+
+/**
+ * 指定日のダッシュボードキャッシュを削除する。
+ * updateTaskStatus でシートを書き換えたあとに呼ぶ。
+ * @private
+ */
+function invalidateDashboardCache_(dateStr) {
+  try {
+    CacheService.getScriptCache().remove(CACHE_KEY_PREFIX_ + dateStr);
+    Logger.log('[cache INVALIDATED] ' + CACHE_KEY_PREFIX_ + dateStr);
+  } catch (e) {}
 }
 
 /**
@@ -569,8 +641,9 @@ function updateTaskStatus(dateStr, clientToken, taskId, newStatus) {
       return { ok: false, error: 'TASK_NOT_FOUND' };
     }
 
-    // 書き込み後の最新集計を返す → クライアントがドーナツ・カテゴリバー・達成率を差分更新
-    var model = buildDailyDashboardModel_(ss, d, tz, {});
+    // キャッシュを無効化してから高速集計（section2=Gemini は skip → updateSummary は使わないため不要）
+    invalidateDashboardCache_(d);
+    var model = buildDailyDashboardModel_(ss, d, tz, { skipSection2: true });
     return toPublicDashboardJson_(model);
   } finally {
     lock.releaseLock();
@@ -582,12 +655,23 @@ function updateTaskStatus(dateStr, clientToken, taskId, newStatus) {
  * google.script.run で getDashboardJsonForClient を呼び、ドーナツ SVG・カテゴリバー・■2 を描画。
  * 変更後: clasp push → ウェブアプリ「新バージョン」で再デプロイ。
  */
+/**
+ * HTML 版ダッシュボード（LIFF）。
+ * model が渡されたとき（doGet がキャッシュから取得済みのとき）は JSON を HTML に埋め込み、
+ * クライアントは google.script.run を呼ばずに即座に描画する（2往復 → 1往復）。
+ * model が null のとき（エラー時）は従来通り google.script.run でフォールバック取得する。
+ * 変更後: clasp push → ウェブアプリ「新バージョン」で再デプロイ。
+ */
 function htmlMessage_(message, dateStr, format, model, tokenStr) {
   var defaultDateJson = JSON.stringify(dateStr);
   var defaultTokenJson = JSON.stringify(String(tokenStr || ''));
   var escapedHint = escapeHtml_(message || '');
   // AVATAR_BASE_URL: 末尾スラッシュなし。未設定時は '' → 画像なし（テキストのみ）
   var avatarBaseUrl = (PropertiesService.getScriptProperties().getProperty('AVATAR_BASE_URL') || '').replace(/\/$/, '');
+
+  // model（public JSON）が渡されていればクライアントに埋め込む → 2往復目の RPC をゼロにする
+  // model は toPublicDashboardJson_ の結果（ok, date, tasks, categories, section2 等を含む）
+  var bakedJson = (model && model.ok) ? JSON.stringify(model) : 'null';
 
   var css = [
     'body{font-family:system-ui,sans-serif;padding:0 16px 40px;max-width:480px;margin:0 auto;background:#fafafa;color:#1E293B;}',
@@ -638,6 +722,8 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
   var js = [
     '(function(){',
     'var D=' + defaultDateJson + ',T=' + defaultTokenJson + ',AV=' + JSON.stringify(avatarBaseUrl) + ',NS="http://www.w3.org/2000/svg";',
+    // サーバーが埋め込んだ初期データ。非 null のときは google.script.run を呼ばず即描画する
+    'var __D__=' + bakedJson + ';',
     'var root=document.getElementById("app"),stEl=document.getElementById("st");',
     'var qs=new URLSearchParams(window.location.search);',
     'var date=(qs.get("date")||"").trim()||D,token=(qs.get("token")||"").trim()||T;',
@@ -781,7 +867,9 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '  sec.appendChild(mkChar("ヒロ子",s2.hiroko||"",s2.hiroko_image||"",true));',
     '  frag.appendChild(sec);root.appendChild(frag);',
     '}',
-    'google.script.run.withSuccessHandler(paint).withFailureHandler(function(err){stEl.textContent="取得に失敗しました: "+(err&&err.message?err.message:String(err));}).getDashboardJsonForClient(date,token);',
+    // 埋め込みデータがあれば即描画（キャッシュ or doGet ビルド済み）、なければ RPC でフォールバック
+    'if(__D__&&__D__.ok===true){stEl.textContent="";paint(__D__);}',
+    'else{google.script.run.withSuccessHandler(paint).withFailureHandler(function(err){stEl.textContent="取得に失敗しました: "+(err&&err.message?err.message:String(err));}).getDashboardJsonForClient(date,token);}',
     '})();',
   ].join('\n');
 
