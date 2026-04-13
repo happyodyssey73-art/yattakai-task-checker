@@ -686,7 +686,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '}',
     // mkStatusBtn: closure-in-loop を避けるため独立関数
     'function mkStatusBtn(s,taskId,li){',
-    '  var btn=document.createElement("button");btn.dataset.status=s;',
+    '  var btn=document.createElement("button");btn.className="tbtn";btn.dataset.status=s;',
     '  btn.textContent=s==="done"?"◯":"✕";',
     '  btn.addEventListener("click",function(){onTaskToggle(taskId,s,li);});',
     '  return btn;',
@@ -1175,6 +1175,180 @@ function buildTaskLabelMap_(tasksSheet) {
     map[id] = shortv || titlev || id;
   }
   return map;
+}
+
+// ─────────────────────────────────────────────────────────────
+// セットアップ（初回 or 修復時にエディタから 1 回実行）
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * マスタシートの初期化・補完。GAS エディタから 1 回だけ手動実行する。
+ *
+ * 1. Categories シートを作成・upsert（task_id の color が正しく設定されていないとドーナツが全グレーになる）
+ * 2. Tasks シートに全 8 タスクを upsert（既存行は上書き、新規行は追加）
+ * 3. 当日分の Daily 行を補完（Tasks にあって Daily にない task_id を追加）
+ *
+ * 冪等なので何度実行しても安全。既存のユーザーデータ（status 列）は書き換えない。
+ */
+function setupMasterSheets() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var tz = Session.getScriptTimeZone();
+  var todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+
+  setupCategories_(ss);
+  setupTasks_(ss);
+  ensureDailyRowsForToday_(ss, todayStr, tz);
+
+  Logger.log('[setupMasterSheets] 完了（date=' + todayStr + '）。GAS ログで結果を確認してください。');
+  SpreadsheetApp.getActiveSpreadsheet().toast('セットアップ完了', 'やったかい', 5);
+}
+
+/**
+ * Categories シートを作成・upsert する。
+ * seed/tasks.csv のカテゴリ（health / study / money_work）をドーナツの色と合わせて設定。
+ * @private
+ */
+function setupCategories_(ss) {
+  var CATS = [
+    ['category_id', 'display_name', 'color',    'sort_order', 'active'],
+    ['health',      '健康・運動',    '#3B82F6',  1,            true],
+    ['study',       '学習',          '#22C55E',  2,            true],
+    ['money_work',  'お金・仕事',    '#F59E0B',  3,            true],
+  ];
+
+  var sheet = ss.getSheetByName('Categories');
+  if (!sheet) {
+    sheet = ss.insertSheet('Categories');
+    sheet.getRange(1, 1, CATS.length, CATS[0].length).setValues(CATS);
+    Logger.log('[setupCategories_] Categories シートを新規作成しました。');
+    return;
+  }
+
+  var existing = sheet.getDataRange().getValues();
+  if (existing.length < 1) {
+    sheet.getRange(1, 1, CATS.length, CATS[0].length).setValues(CATS);
+    Logger.log('[setupCategories_] Categories を書き込みしました（空だったため）。');
+    return;
+  }
+
+  var header = existing[0];
+  var idCol = header.indexOf('category_id');
+  if (idCol < 0) {
+    sheet.clearContents();
+    sheet.getRange(1, 1, CATS.length, CATS[0].length).setValues(CATS);
+    Logger.log('[setupCategories_] Categories のヘッダが不正だったため再書き込みしました。');
+    return;
+  }
+
+  var hdrMap = {};
+  for (var h = 0; h < header.length; h++) hdrMap[header[h]] = h;
+
+  var existingIds = {};
+  for (var r = 1; r < existing.length; r++) {
+    var id = String(existing[r][idCol] || '').trim();
+    if (id) existingIds[id] = r + 1;
+  }
+
+  var dataRows = CATS.slice(1);
+  var dataHeader = CATS[0];
+  for (var i = 0; i < dataRows.length; i++) {
+    var catRow = dataRows[i];
+    var catId = String(catRow[0]);
+    var rowNum = existingIds[catId];
+    if (rowNum) {
+      for (var c = 0; c < dataHeader.length; c++) {
+        var col = hdrMap[dataHeader[c]];
+        if (col !== undefined) sheet.getRange(rowNum, col + 1).setValue(catRow[c]);
+      }
+      Logger.log('[setupCategories_] 更新: ' + catId);
+    } else {
+      var newRow = new Array(header.length).fill('');
+      for (var c2 = 0; c2 < dataHeader.length; c2++) {
+        var col2 = hdrMap[dataHeader[c2]];
+        if (col2 !== undefined) newRow[col2] = catRow[c2];
+      }
+      sheet.appendRow(newRow);
+      Logger.log('[setupCategories_] 追加: ' + catId);
+    }
+  }
+}
+
+/**
+ * Tasks シートに全 8 タスクを upsert する。
+ * task_id が既存なら title / display_short / category_id / active / sort_order を更新。
+ * task_id が未存在なら末尾に追加。
+ * @private
+ */
+function setupTasks_(ss) {
+  var TASKS = [
+    ['task_id', 'title',                           'display_short', 'category_id', 'active', 'sort_order'],
+    ['t_001',   '筋トレ20分',                       '筋トレ',        'health',      true,     10],
+    ['t_005',   '残像トレーニング',                  '残像',          'health',      true,     20],
+    ['t_008',   'コンビニによらない',                'コンビニ×',     'health',      true,     30],
+    ['t_002',   'AIスクールの勉強30分',              'AIスクール',    'study',       true,     40],
+    ['t_006',   'タイピング練習',                    'タイピング',    'study',       true,     50],
+    ['t_004',   'スマートノート・WOOP・0秒思考',     'ノート',        'study',       true,     60],
+    ['t_003',   '株のチェック（セクター・国の強さ）', '株チェック',   'money_work',  true,     70],
+    ['t_007',   'ニュースのチェック',                'ニュース',      'money_work',  true,     80],
+  ];
+
+  var sheet = ss.getSheetByName('Tasks');
+  if (!sheet) {
+    sheet = ss.insertSheet('Tasks');
+    sheet.getRange(1, 1, TASKS.length, TASKS[0].length).setValues(TASKS);
+    Logger.log('[setupTasks_] Tasks シートを新規作成しました。');
+    return;
+  }
+
+  var existing = sheet.getDataRange().getValues();
+  if (existing.length < 1) {
+    sheet.getRange(1, 1, TASKS.length, TASKS[0].length).setValues(TASKS);
+    Logger.log('[setupTasks_] Tasks を書き込みしました（空だったため）。');
+    return;
+  }
+
+  var header = existing[0];
+  var idCol = header.indexOf('task_id');
+  if (idCol < 0) {
+    sheet.clearContents();
+    sheet.getRange(1, 1, TASKS.length, TASKS[0].length).setValues(TASKS);
+    Logger.log('[setupTasks_] Tasks のヘッダが不正だったため再書き込みしました。');
+    return;
+  }
+
+  var hdrMap = {};
+  for (var h = 0; h < header.length; h++) hdrMap[header[h]] = h;
+
+  var existingIds = {};
+  for (var r = 1; r < existing.length; r++) {
+    var id = String(existing[r][idCol] || '').trim();
+    if (id) existingIds[id] = r + 1;
+  }
+
+  var dataRows = TASKS.slice(1);
+  var dataHeader = TASKS[0];
+  for (var i = 0; i < dataRows.length; i++) {
+    var taskRow = dataRows[i];
+    var taskId = String(taskRow[0]);
+    var rowNum = existingIds[taskId];
+    if (rowNum) {
+      for (var c = 0; c < dataHeader.length; c++) {
+        var colName = dataHeader[c];
+        if (colName === 'task_id') continue;
+        var col = hdrMap[colName];
+        if (col !== undefined) sheet.getRange(rowNum, col + 1).setValue(taskRow[c]);
+      }
+      Logger.log('[setupTasks_] 更新: ' + taskId);
+    } else {
+      var newRow = new Array(header.length).fill('');
+      for (var c2 = 0; c2 < dataHeader.length; c2++) {
+        var col2 = hdrMap[dataHeader[c2]];
+        if (col2 !== undefined) newRow[col2] = taskRow[c2];
+      }
+      sheet.appendRow(newRow);
+      Logger.log('[setupTasks_] 追加: ' + taskId);
+    }
+  }
 }
 
 /**
