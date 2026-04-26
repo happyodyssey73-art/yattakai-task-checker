@@ -2176,18 +2176,33 @@ function sendWeeklyReviewImpl_(weekStartJst) {
 /**
  * 土曜 8 時台に実行。先週月〜金を集計して LINE + LIFF で届ける（§1.4 W-2）。
  * withWeeklyLock_ で 1 週 1 プッシュを保証する（付録 A.3）。
- * 土曜日に実行されるため当日から 5 日遡った月曜を weekStart とする。
+ * weekStart は「直近の月曜（JST）」に正規化する。
+ * - 土曜トリガ実行時: その週の月曜（意図どおり）
+ * - 土曜以外の手動実行時: 「今日-5日」のようなズレが起きず、常に今週の振り返りになる
  */
 function sendWeeklyReview() {
   var today = new Date();
   var todayJst = Utilities.formatDate(today, TZ_, 'yyyy-MM-dd');
-  // 土曜トリガ想定: 当日 JST から 5 日前の JST 日付 = 集計対象週の月曜
-  var monday = new Date(today.getTime() - 5 * 86400000);
-  var weekStartJst = Utilities.formatDate(monday, TZ_, 'yyyy-MM-dd');
+  var weekStartJst = mostRecentMondayJst_(todayJst);
   Logger.log('[sendWeeklyReview] start todayJst=' + todayJst + ' weekStartJst=' + weekStartJst);
   withWeeklyLock_(weekStartJst, function () {
     return sendWeeklyReviewImpl_(weekStartJst);
   });
+}
+
+/**
+ * JST の日付（yyyy-MM-dd）から、その日を含む週の「直近の月曜（JST）」を返す。
+ * @param {string} dateJst yyyy-MM-dd
+ * @returns {string} yyyy-MM-dd（月曜）
+ * @private
+ */
+function mostRecentMondayJst_(dateJst) {
+  // 12:00 JST 固定で Date を作り、境界（タイムゾーン差・夏時間等）で日付がズレないようにする
+  var base = new Date(String(dateJst) + 'T12:00:00+09:00');
+  var dow = base.getDay(); // 0=Sun ... 6=Sat (JST)
+  var daysSinceMonday = (dow + 6) % 7; // Mon=0, Tue=1, ... Sun=6
+  var monday = new Date(base.getTime() - daysSinceMonday * 86400000);
+  return Utilities.formatDate(monday, TZ_, 'yyyy-MM-dd');
 }
 
 /**
