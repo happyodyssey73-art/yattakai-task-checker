@@ -3,6 +3,8 @@
  *
  * スクリプト プロパティ:
  *   LINE_CHANNEL_ACCESS_TOKEN, LINE_USER_ID（必須）
+ *   INVEST24H_MAIL_TRIGGER_SECRET（任意）… 設定時のみ、ウェブアプリ GET
+ *     ?invest24hMail=1&secret=… で sendInvest24hDigestEmail を実行可（MailApp）。未設定時はこの経路は 403 相当
  *   GEMINI_API_KEY（任意）… 設定時に §6.1 Gemini で ■2 を生成。未設定時は §6.2 テンプレのみ
  *   AVATAR_BASE_URL（任意）… キャラ画像を配信する URL（末尾スラッシュなし）。例: https://yattakai-avatars.surge.sh
  *                             未設定時は LIFF でテキストのみ表示（フォールバック）
@@ -17,13 +19,17 @@
  *
  * 初回セットアップ:
  *   1. installDailyReminderTrigger を 1 回実行（毎日 17:40 JST に sendDailyReminder）
- *   2. installMorningMessageTrigger を 1 回実行（毎日 9:00 JST に sendMorningMessage）
- *   3. installCleanupTrigger を 1 回実行（毎週月曜 3:00 に cleanupOldDashTokens）
+ *   2. installMorningMessageTrigger を 1 回実行（毎日朝 sendMorningMessage。時刻は MORNING_LINE_HOUR_JST_、既定 8 時 JST 前後。コード変更後は必ず再実行）
+ *   3. installWeeklyReviewTrigger を 1 回実行（毎週土曜 sendWeeklyReview。時刻は WEEKLY_REVIEW_HOUR_JST_、既定 8 時台 JST 前後）
+ *   4. installCleanupTrigger を 1 回実行（毎週月曜 3:00 JST に cleanupOldDashTokens）
  * 変更後は gas で clasp push のあと、ウェブアプリを「新バージョン」で再デプロイすること。
  */
 
 /** 当日ダッシュ用トークンをスクリプトプロパティに保存するキー接頭辞 */
 var DASH_TOKEN_PROP_PREFIX_ = 'yattakai_dash_token_';
+
+/** 週次ダッシュ用トークンのスクリプトプロパティキー接頭辞（§付録 A.3） */
+var WEEK_TOKEN_PROP_PREFIX_ = 'yattakai_week_token_';
 
 /** CacheService キー接頭辞と TTL（30 分）*/
 var CACHE_KEY_PREFIX_ = 'yattakai_dash_v1_';
@@ -31,6 +37,19 @@ var CACHE_TTL_SEC_    = 1800;
 
 /** タイムゾーン（GAS プロジェクト設定の TZ_ に依存しないよう明示固定）*/
 var TZ_ = 'Asia/Tokyo';
+
+/**
+ * 朝の「今日の始まり」LINE（installMorningMessageTrigger / sendMorningMessage）の開始時（JST、0–23）。
+ * nearMinute(0) と組み合わせる。GAS の実行時刻は SPEC §1.1.1 のとおり前後にずれうる。
+ * 土曜は sendWeeklyReview（§1.4）も別トリガで同じ時台になり、2 本のプッシュが近い時間に届きうる。
+ */
+var MORNING_LINE_HOUR_JST_ = 8;
+
+/**
+ * 週次振り返り（installWeeklyReviewTrigger / sendWeeklyReview）の土曜トリガの時（JST、0–23）。§1.4 W-2。
+ * 値は朝プッシュ（MORNING_LINE_HOUR_JST_）と同じ 8 でも、**別トリガ・別ロック**であり土曜のみ両方が動きうる。
+ */
+var WEEKLY_REVIEW_HOUR_JST_ = 8;
 
 function generateDashToken_() {
   return Utilities.getUuid().replace(/-/g, '');
@@ -102,6 +121,20 @@ function tokenErrorHtmlHint_(err) {
   return 'アクセスを確認できませんでした。';
 }
 
+/** 週次 LIFF / doGetWeekly_ 用（日次の tokenErrorHtmlHint_ とは文言を分離） */
+function weeklyTokenErrorHtmlHint_(err) {
+  if (err === 'token_not_issued') {
+    return '週次の振り返り用トークンがまだありません。週次の LINE を送ったあとに開くか、GAS で sendWeeklyReview を実行してください。';
+  }
+  if (err === 'token_missing') {
+    return 'リンクに token がありません。最新の週次 LINE の「振り返り」から開き直してください。';
+  }
+  if (err === 'invalid_token') {
+    return '週次のリンクが無効または期限切れです。最新の週次 LINE の「振り返り」から開いてください。';
+  }
+  return '週次ページへのアクセスを確認できませんでした。';
+}
+
 /**
  * 毎日 17:40（スクリプトのタイムゾーン）に sendDailyReminder を実行するトリガを 1 本だけ入れる。
  * Apps Script エディタから手動で 1 回実行する。
@@ -157,8 +190,8 @@ function withLock_(fullKey, fn) {
 }
 
 /**
- * 毎朝 9:00（JST）に sendMorningMessage を実行するトリガを 1 本だけ設定する。
- * GAS エディタから手動で 1 回実行すること。
+ * 毎朝 MORNING_LINE_HOUR_JST_ 時（JST）に sendMorningMessage を実行するトリガを 1 本だけ設定する。
+ * GAS エディタから手動で 1 回実行すること（コードの時刻変更後は再実行が必須）。
  */
 function installMorningMessageTrigger() {
   var triggers = ScriptApp.getProjectTriggers();
@@ -174,15 +207,15 @@ function installMorningMessageTrigger() {
   ScriptApp.newTrigger('sendMorningMessage')
     .timeBased()
     .everyDays(1)
-    .atHour(9)
+    .atHour(MORNING_LINE_HOUR_JST_)
     .nearMinute(0)
     .inTimezone(TZ_)
     .create();
-  Logger.log('[installMorningMessageTrigger] 朝9時トリガを登録しました。');
+  Logger.log('[installMorningMessageTrigger] 朝' + MORNING_LINE_HOUR_JST_ + '時トリガを登録しました。');
 }
 
 /**
- * 朝9時に送る「今日の始まり」LINE メッセージ。
+ * 朝の定刻（MORNING_LINE_HOUR_JST_ JST）に送る「今日の始まり」LINE メッセージ。
  * withLock_ で 1 日 1 回だけ実行される。
  * - Gemini は呼ばない（テンプレートのみ）
  * - issueDashToken_ で冪等トークンを発行（夕方と URL を共有）
@@ -599,26 +632,80 @@ function parseLiffState_(liffState) {
 }
 
 /**
- * ウェブアプリ（LIFF エンドポイント）。
- * format=json … ダッシュボード DTO（?token= は sendDailyReminder 発行分と照合）
+ * doGet のクエリと LIFF の liff.state を一箇所でマージする。
+ * 同一キーは e.parameter（アドレスバー直下のクエリ）を liff.state より優先する。
+ * @returns {{ date: string, weekStart: string, token: string, format: string, liffState: string }}
+ * @private
  */
-function doGet(e) {
+function parseWebAppQuery_(e) {
   e = e || {};
   var p = e.parameter || {};
+  var liffState = (p['liff.state'] && String(p['liff.state'])) || '';
+  var st = parseLiffState_(liffState);
+  function pick_(top, fromState) {
+    var a = top != null && String(top).trim();
+    if (a) return a;
+    var b = fromState != null && String(fromState).trim();
+    return b || '';
+  }
+  var fmtTop = (p.format && String(p.format).trim().toLowerCase()) || '';
+  var fmtSt = (st.format && String(st.format).trim().toLowerCase()) || '';
+  return {
+    date: pick_(p.date, st.date),
+    weekStart: pick_(p.weekStart, st.weekStart),
+    token: pick_(p.token != null && p.token !== undefined ? p.token : '', st.token),
+    format: fmtTop || fmtSt || '',
+    liffState: liffState,
+  };
+}
+
+/**
+ * LINE LIFF 内 WebView（iframe）で表示するため X-Frame-Options を緩和する。
+ * JSON（jsonOutput_）には使わない。
+ * @private
+ */
+function liffHtmlOutput_(html) {
+  return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * ウェブアプリ（LIFF エンドポイント）。
+ * format=json … ダッシュボード DTO（?token= は sendDailyReminder 発行分と照合）
+ *
+ * 投資図解メール（任意）: スクリプトプロパティ INVEST24H_MAIL_TRIGGER_SECRET が設定されているときだけ、
+ * GET ?invest24hMail=1&secret=（同値）で sendInvest24hDigestEmail を実行する。JSON のみ返す。
+ */
+function doGet(e) {
+  e = e || { parameter: {} };
+  var p0 = e.parameter || {};
+  if (String(p0.invest24hMail || '').trim() === '1') {
+    var props0 = PropertiesService.getScriptProperties();
+    var expected0 = (props0.getProperty('INVEST24H_MAIL_TRIGGER_SECRET') || '').trim();
+    var got0 = String(p0.secret != null ? p0.secret : '').trim();
+    if (!expected0) {
+      return jsonOutput_({ ok: false, error: 'mail_trigger_secret_not_configured' });
+    }
+    if (got0 !== expected0) {
+      return jsonOutput_({ ok: false, error: 'forbidden' });
+    }
+    try {
+      sendInvest24hDigestEmail();
+      return jsonOutput_({ ok: true, mailed: true });
+    } catch (mailErr) {
+      return jsonOutput_({ ok: false, error: 'mail_failed', message: String(mailErr.message || mailErr) });
+    }
+  }
+
+  var q = parseWebAppQuery_(e);
   var tz = TZ_;
 
-  var rawDate = (p.date && String(p.date).trim()) || '';
-  var format = (p.format && String(p.format).trim().toLowerCase()) || '';
-  var tokenParam = p.token != null && p.token !== undefined ? String(p.token) : '';
+  var rawDate = q.date;
+  var format = q.format;
+  var tokenParam = q.token;
 
-  // LIFF は認証フローで元クエリを liff.state に包んで渡す（例: ?liff.state=?date=X&token=Y）。
-  // 直接の date / token が無い場合は liff.state をパースして補完する。
-  var liffState = (p['liff.state'] && String(p['liff.state'])) || '';
-  if (liffState && (!rawDate || !tokenParam)) {
-    var sp = parseLiffState_(liffState);
-    if (!rawDate && sp.date) rawDate = String(sp.date).trim();
-    if (!tokenParam && sp.token) tokenParam = String(sp.token).trim();
-    if (!format && sp.format) format = String(sp.format).trim().toLowerCase();
+  // weekStart があれば週次（§5.7.3 W-8）。日次 date より先に判定する。
+  if (q.weekStart) {
+    return doGetWeekly_(q.weekStart, tokenParam, format);
   }
 
   var dateStr = rawDate || Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
@@ -1139,7 +1226,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '<script>' + js + '<\/script>' +
     '</body></html>';
 
-  return HtmlService.createHtmlOutput(html);
+  return liffHtmlOutput_(html);
 }
 
 function escapeHtml_(s) {
@@ -1685,8 +1772,8 @@ function cleanupOldDashTokens(daysToKeep) {
   var props = PropertiesService.getScriptProperties();
   var all = props.getProperties();
   var deleted = 0;
-  // 管理対象プレフィックス: dashToken / 夕方フラグ / 朝フラグ
-  var PREFIXES = [DASH_TOKEN_PROP_PREFIX_, 'sent:', 'morning:'];
+  // 管理対象プレフィックス: dashToken / 夕方フラグ / 朝フラグ / 週次トークン / 週次フラグ（付録 A.2）
+  var PREFIXES = [DASH_TOKEN_PROP_PREFIX_, 'sent:', 'morning:', WEEK_TOKEN_PROP_PREFIX_, 'sent_week:'];
   for (var key in all) {
     var matchedPrefix = null;
     for (var pi = 0; pi < PREFIXES.length; pi++) {
@@ -1718,8 +1805,630 @@ function installCleanupTrigger() {
     .timeBased()
     .onWeekDay(ScriptApp.WeekDay.MONDAY)
     .atHour(3)
+    .inTimezone(TZ_)
     .create();
-  Logger.log('[installCleanupTrigger] 週次クリーンアップトリガを登録しました。');
+  Logger.log('[installCleanupTrigger] 月曜 3 時（' + TZ_ + '）クリーンアップトリガを登録しました。');
+}
+
+// ─────────────────────────────────────────────────────────────
+// 週次振り返り機能（§1.4・§3.6・§5.7）
+// ─────────────────────────────────────────────────────────────
+
+/**
+ * 週次トークンのスクリプトプロパティキーを返す。
+ * @private
+ */
+function weekTokenPropKey_(weekStartJst) {
+  return WEEK_TOKEN_PROP_PREFIX_ + weekStartJst;
+}
+
+/**
+ * 週次ダッシュトークンを冪等に発行。同じ weekStart に 2 回目以降は既存トークンを返す。
+ * @private
+ */
+function issueWeekToken_(weekStartJst) {
+  var props = PropertiesService.getScriptProperties();
+  var key = weekTokenPropKey_(weekStartJst);
+  var existing = props.getProperty(key);
+  if (existing) {
+    Logger.log('[issueWeekToken_] 既存トークンを返却（' + weekStartJst + '）');
+    return existing;
+  }
+  var token = Utilities.getUuid().replace(/-/g, '');
+  props.setProperty(key, token);
+  Logger.log('[issueWeekToken_] 新規トークンを発行（' + weekStartJst + '）');
+  return token;
+}
+
+/**
+ * 週次送信済みフラグで 1 週 1 プッシュを保証する（付録 A.3）。
+ * キーは 'sent_week:{weekStartJst}'（その週の月曜の JST 日付）。
+ * 日次・朝の withLock_ とは別: ScriptLock 下で未送信なら fn を呼び、fn が true（LINE 200 確定）のときだけフラグを立てる。
+ * @param {function(): boolean} fn 成功時 true（例: sendWeeklyReviewImpl_）
+ * @private
+ */
+function withWeeklyLock_(weekStartJst, fn) {
+  var fullKey = 'sent_week:' + weekStartJst;
+  var lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(8000);
+  } catch (e) {
+    Logger.log('[withWeeklyLock_] ロック取得タイムアウト。スキップ（' + fullKey + '）');
+    return;
+  }
+  try {
+    var props = PropertiesService.getScriptProperties();
+    if (props.getProperty(fullKey)) {
+      Logger.log('[withWeeklyLock_] 実行済みのためスキップ（' + fullKey + '）');
+      return;
+    }
+    var committed = false;
+    try {
+      committed = fn() === true;
+    } catch (err) {
+      Logger.log('[withWeeklyLock_] 実行中に例外: ' + String(err.message || err));
+      committed = false;
+    }
+    if (committed) {
+      props.setProperty(fullKey, '1');
+      Logger.log('[withWeeklyLock_] 送信成功を確定（' + fullKey + '）');
+    } else {
+      Logger.log('[withWeeklyLock_] 送信が完了しなかったため sent_week は未設定（再実行可）: ' + fullKey);
+    }
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * 週次トークンを検証する。
+ * @returns {{ ok: boolean, error?: string }}
+ */
+function assertWeeklyToken_(weekStartJst, tokenParam) {
+  if (isSkipDashTokenCheck_()) {
+    Logger.log('[SECURITY WARNING] SKIP_DASH_TOKEN_CHECK が有効です。weekStart=' + weekStartJst);
+    return { ok: true };
+  }
+  var key = weekTokenPropKey_(weekStartJst);
+  var stored = PropertiesService.getScriptProperties().getProperty(key);
+  if (!stored) {
+    return { ok: false, error: 'token_not_issued' };
+  }
+  var t = tokenParam != null ? String(tokenParam).trim() : '';
+  if (!t) {
+    return { ok: false, error: 'token_missing' };
+  }
+  if (t !== String(stored).trim()) {
+    return { ok: false, error: 'invalid_token' };
+  }
+  return { ok: true };
+}
+
+/**
+ * task_id → category_id のマップを Tasks 行配列から構築する。
+ * @private
+ */
+function buildTaskCategoryMapFromRows_(taskRows) {
+  var h = taskRows[0];
+  var ixId = h.indexOf('task_id');
+  var ixCat = h.indexOf('category_id');
+  var ixActive = h.indexOf('active');
+  var map = {};
+  if (ixId < 0 || ixCat < 0) return map;
+  for (var r = 1; r < taskRows.length; r++) {
+    var row = taskRows[r];
+    var id = String(row[ixId] || '').trim();
+    if (!id) continue;
+    if (ixActive >= 0) {
+      var a = row[ixActive];
+      if (a === false || String(a).toUpperCase() === 'FALSE') continue;
+    }
+    map[id] = String(row[ixCat] || '').trim();
+  }
+  return map;
+}
+
+/**
+ * Categories シートから { map: {category_id → info}, order: [id,...] } を返す。
+ * @private
+ */
+function buildCategoryInfoMap_(ss) {
+  var catSheet = ss.getSheetByName('Categories');
+  var map = {};
+  var order = [];
+  if (!catSheet) return { map: map, order: order };
+  var cRows = catSheet.getDataRange().getValues();
+  var ch = cRows[0];
+  var cxId = ch.indexOf('category_id');
+  var cxName = ch.indexOf('display_name');
+  var cxColor = ch.indexOf('color');
+  var cxSort = ch.indexOf('sort_order');
+  var cxActive = ch.indexOf('active');
+  if (cxId < 0) return { map: map, order: order };
+  for (var ci = 1; ci < cRows.length; ci++) {
+    var crow = cRows[ci];
+    var catId = String(crow[cxId] || '').trim();
+    if (!catId) continue;
+    if (cxActive >= 0) {
+      var av = crow[cxActive];
+      if (av === false || String(av).toUpperCase() === 'FALSE') continue;
+    }
+    var sord = cxSort >= 0 ? Number(crow[cxSort]) : ci;
+    if (isNaN(sord)) sord = ci;
+    map[catId] = {
+      category_id: catId,
+      display_name: cxName >= 0 ? String(crow[cxName] || catId).trim() : catId,
+      color: cxColor >= 0 ? String(crow[cxColor] || '#94A3B8').trim() : '#94A3B8',
+      sort_order: sord,
+    };
+    order.push({ id: catId, ord: sord });
+  }
+  order.sort(function (a, b) { return a.ord - b.ord; });
+  return { map: map, order: order };
+}
+
+/**
+ * 1日分のタスクリスト（[{ task_id, status }]）からカテゴリ別集計を返す。
+ * @private
+ */
+function buildDayCategoryStats_(dayTasks, taskCatMap, catInfoResult) {
+  var catMap = catInfoResult.map;
+  var catOrder = catInfoResult.order;
+  var stats = {};
+  var NONE = '__none__';
+
+  for (var i = 0; i < dayTasks.length; i++) {
+    var t = dayTasks[i];
+    var cid = (taskCatMap[t.task_id] || '');
+    if (!catMap[cid]) cid = NONE;
+    if (!stats[cid]) {
+      if (cid === NONE) {
+        stats[NONE] = { category_id: NONE, display_name: 'その他', color: '#94A3B8', sort_order: 9999, done: 0, not_done: 0, total: 0 };
+      } else {
+        var info = catMap[cid];
+        stats[cid] = { category_id: cid, display_name: info.display_name, color: info.color, sort_order: info.sort_order, done: 0, not_done: 0, total: 0 };
+      }
+    }
+    stats[cid].total++;
+    if (t.status === 'done') stats[cid].done++;
+    else stats[cid].not_done++;
+  }
+
+  var result = [];
+  for (var k = 0; k < catOrder.length; k++) {
+    var s = stats[catOrder[k].id];
+    if (s && s.total > 0) result.push(s);
+  }
+  var noneStats = stats[NONE];
+  if (noneStats && noneStats.total > 0) result.push(noneStats);
+  return result;
+}
+
+/**
+ * 週次ダッシュボードモデルを構築する（§3.6）。
+ * weekStartJst: 月曜の JST 日付（YYYY-MM-DD）
+ * 達成率 = 月〜金の日次達成率の算術平均（Daily 行なし日は 0%・分母に含む）。
+ * @returns {{ ok, week_start, week_end, weekly_achievement_percent, mood_message, data_days, days, no_data }}
+ */
+function buildWeeklyDashboardModel_(ss, weekStartJst) {
+  var dailySheet = ss.getSheetByName('Daily');
+  var tasksSheet = ss.getSheetByName('Tasks');
+  if (!dailySheet || !tasksSheet) {
+    throw new Error('シート Daily または Tasks が見つかりません。');
+  }
+
+  // 月〜金の日付リストを生成
+  var DOW_JP = ['日', '月', '火', '水', '木', '金', '土'];
+  var startDate = new Date(weekStartJst + 'T12:00:00+09:00');
+  var weekDates = [];
+  for (var i = 0; i < 5; i++) {
+    var d = new Date(startDate.getTime() + i * 86400000);
+    weekDates.push({
+      date: Utilities.formatDate(d, TZ_, 'yyyy-MM-dd'),
+      dow: DOW_JP[d.getDay()],
+    });
+  }
+
+  // Daily シートを読み込み
+  var dailyRows = dailySheet.getDataRange().getValues();
+  var header = dailyRows[0];
+  var ciDate = header.indexOf('date');
+  var ciTask = header.indexOf('task_id');
+  var ciStat = header.indexOf('status');
+  if (ciDate < 0 || ciTask < 0 || ciStat < 0) {
+    throw new Error('Daily の 1 行目に date / task_id / status 列が必要です。');
+  }
+
+  var tRows = tasksSheet.getDataRange().getValues();
+  var taskCatMap = buildTaskCategoryMapFromRows_(tRows);
+  var catInfoResult = buildCategoryInfoMap_(ss);
+
+  // 日付ごとにグループ化（対象週のみ）
+  var targetDates = {};
+  for (var wi = 0; wi < weekDates.length; wi++) targetDates[weekDates[wi].date] = true;
+
+  var rowsByDate = {};
+  for (var r = 1; r < dailyRows.length; r++) {
+    var row = dailyRows[r];
+    var dd = formatDateCell_(row[ciDate], TZ_);
+    if (!targetDates[dd]) continue;
+    if (!rowsByDate[dd]) rowsByDate[dd] = [];
+    rowsByDate[dd].push({
+      task_id: String(row[ciTask] || '').trim(),
+      status: normalizeStatus_(row[ciStat]),
+    });
+  }
+
+  // 曜日ごとの集計（§3.6: Daily 行なし日は 0% を分母に含む）
+  var days = [];
+  var totalPctSum = 0;
+  var dataCount = 0;
+  for (var di = 0; di < weekDates.length; di++) {
+    var wd = weekDates[di];
+    var dayTasks = rowsByDate[wd.date] || [];
+    var done = 0;
+    var total = dayTasks.length;
+    for (var ti = 0; ti < dayTasks.length; ti++) {
+      if (dayTasks[ti].status === 'done') done++;
+    }
+    var pct = total > 0 ? Math.round(done / total * 100) : 0;
+    totalPctSum += pct;
+    if (total > 0) dataCount++;
+    var cats = buildDayCategoryStats_(dayTasks, taskCatMap, catInfoResult);
+    days.push({
+      date: wd.date,
+      dow: wd.dow,
+      achievement_percent: pct,
+      has_data: total > 0,
+      counts: { done: done, not_done: total - done, total: total },
+      categories: cats,
+    });
+  }
+
+  var weeklyPct = Math.round(totalPctSum / 5);
+
+  // §3.6.1: 全日データなし
+  if (dataCount === 0) {
+    return {
+      ok: true,
+      week_start: weekStartJst,
+      week_end: weekDates[4].date,
+      weekly_achievement_percent: 0,
+      mood_message: '今週はまだデータがありません',
+      data_days: 0,
+      days: days,
+      no_data: true,
+    };
+  }
+
+  return {
+    ok: true,
+    week_start: weekStartJst,
+    week_end: weekDates[4].date,
+    weekly_achievement_percent: weeklyPct,
+    mood_message: moodMessage_(weeklyPct),
+    data_days: dataCount,
+    days: days,
+    no_data: false,
+  };
+}
+
+/**
+ * 週次 LINE プッシュの実処理（§1.4 W-4: シンプル本文）。
+ * @returns {boolean} ユーザー向け週次 LINE を HTTP 200 で送れたら true（withWeeklyLock_ が sent_week をコミットする）
+ * @private
+ */
+function sendWeeklyReviewImpl_(weekStartJst) {
+  var props = PropertiesService.getScriptProperties();
+  var lineToken = props.getProperty('LINE_CHANNEL_ACCESS_TOKEN');
+  var userId = props.getProperty('LINE_USER_ID');
+  if (!lineToken || !userId) {
+    Logger.log('[sendWeeklyReview] LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID 未設定のため週次を送れません');
+    return false;
+  }
+
+  var ss;
+  try {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  } catch (e0) {
+    Logger.log('[sendWeeklyReview] getActiveSpreadsheet 失敗: ' + String(e0));
+    return linePushTextWeekly_(lineToken, userId, '【やったかい週次】スプレッドシートに接続できませんでした。');
+  }
+
+  var model;
+  try {
+    model = buildWeeklyDashboardModel_(ss, weekStartJst);
+  } catch (e) {
+    Logger.log('[sendWeeklyReview] モデル構築失敗: ' + String(e));
+    return linePushTextWeekly_(lineToken, userId, '【やったかい週次】集計に失敗しました。');
+  }
+
+  var weekToken = issueWeekToken_(weekStartJst);
+  var liffUrl = (props.getProperty('LIFF_URL') || '').trim();
+
+  // W-4: シンプル本文（週次達成率 + LIFF URL のみ）
+  var lines = [];
+  lines.push('【やったかい週次】' + model.week_start + '〜' + model.week_end);
+  if (model.no_data) {
+    lines.push('今週はまだデータがありません。');
+  } else {
+    lines.push('週間達成率: ' + model.weekly_achievement_percent + '%　' + model.mood_message);
+    if (model.data_days < 5) {
+      lines.push('（' + model.data_days + '日分のデータで集計）');
+    }
+  }
+  if (liffUrl) {
+    var q = 'weekStart=' + encodeURIComponent(weekStartJst) + '&token=' + encodeURIComponent(weekToken);
+    var sep = liffUrl.indexOf('?') >= 0 ? '&' : '?';
+    lines.push('');
+    lines.push('振り返り: ' + liffUrl + sep + q);
+  }
+
+  var ok = linePushTextWeekly_(lineToken, userId, lines.join('\n'));
+  if (ok) {
+    Logger.log('[sendWeeklyReview] 送信完了（weekStart=' + weekStartJst + '）');
+  } else {
+    Logger.log('[sendWeeklyReview] LINE 送信失敗（weekStart=' + weekStartJst + '）。同週の手動再実行で再送可');
+  }
+  return ok;
+}
+
+/**
+ * 土曜 8 時台に実行。先週月〜金を集計して LINE + LIFF で届ける（§1.4 W-2）。
+ * withWeeklyLock_ で 1 週 1 プッシュを保証する（付録 A.3）。
+ * 土曜日に実行されるため当日から 5 日遡った月曜を weekStart とする。
+ */
+function sendWeeklyReview() {
+  var today = new Date();
+  var todayJst = Utilities.formatDate(today, TZ_, 'yyyy-MM-dd');
+  // 土曜トリガ想定: 当日 JST から 5 日前の JST 日付 = 集計対象週の月曜
+  var monday = new Date(today.getTime() - 5 * 86400000);
+  var weekStartJst = Utilities.formatDate(monday, TZ_, 'yyyy-MM-dd');
+  Logger.log('[sendWeeklyReview] start todayJst=' + todayJst + ' weekStartJst=' + weekStartJst);
+  withWeeklyLock_(weekStartJst, function () {
+    return sendWeeklyReviewImpl_(weekStartJst);
+  });
+}
+
+/**
+ * sendWeeklyReview を毎週土曜 8 時に実行するトリガを 1 本だけ登録する（§1.4 W-2）。
+ * GAS エディタから 1 回だけ手動実行すること。
+ */
+function installWeeklyReviewTrigger() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var toDel = [];
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'sendWeeklyReview') toDel.push(triggers[i]);
+  }
+  for (var j = 0; j < toDel.length; j++) ScriptApp.deleteTrigger(toDel[j]);
+  ScriptApp.newTrigger('sendWeeklyReview')
+    .timeBased()
+    .onWeekDay(ScriptApp.WeekDay.SATURDAY)
+    .atHour(WEEKLY_REVIEW_HOUR_JST_)
+    .inTimezone(TZ_)
+    .create();
+  Logger.log('[installWeeklyReviewTrigger] 土曜 ' + WEEKLY_REVIEW_HOUR_JST_ + ' 時トリガを登録しました。');
+}
+
+/**
+ * LIFF クライアントから google.script.run で呼ぶ週次ダッシュボード JSON 取得。
+ * 名前末尾に _ を付けない（google.script.run の制約）。
+ */
+function getWeeklyDashboardJsonForClient(weekStartJst, clientToken) {
+  var ws = (weekStartJst && String(weekStartJst).trim()) || '';
+  if (!ws || !/^\d{4}-\d{2}-\d{2}$/.test(ws)) {
+    return { ok: false, error: 'invalid_week_start' };
+  }
+  var gate = assertWeeklyToken_(ws, clientToken);
+  if (!gate.ok) return { ok: false, error: gate.error };
+  var ss;
+  try {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  } catch (err) {
+    return { ok: false, error: 'no_spreadsheet' };
+  }
+  try {
+    return buildWeeklyDashboardModel_(ss, ws);
+  } catch (err2) {
+    return { ok: false, error: 'build_failed', message: String(err2.message || err2) };
+  }
+}
+
+/**
+ * doGet の週次モード処理（§5.7）。
+ * weekStart パラメータがあるときに doGet から委譲される。
+ * @private
+ */
+function doGetWeekly_(weekStart, tokenParam, format) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) {
+    if (format === 'json') {
+      return jsonOutput_({ ok: false, error: 'invalid_week_start', week_start: weekStart });
+    }
+    return liffHtmlOutput_('<p>weekStart が不正です。yyyy-MM-dd で指定してください。</p>');
+  }
+
+  var gate = assertWeeklyToken_(weekStart, tokenParam);
+  if (!gate.ok) {
+    if (format === 'json') {
+      return jsonOutput_({ ok: false, error: gate.error, week_start: weekStart });
+    }
+    return liffHtmlOutput_('<p>' + escapeHtml_(weeklyTokenErrorHtmlHint_(gate.error)) + '</p>');
+  }
+
+  var ss;
+  try {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  } catch (err) {
+    if (format === 'json') {
+      return jsonOutput_({ ok: false, error: 'no_spreadsheet' });
+    }
+    return liffHtmlOutput_('<p>スプレッドシートを取得できません。</p>');
+  }
+
+  var model;
+  try {
+    model = buildWeeklyDashboardModel_(ss, weekStart);
+  } catch (err) {
+    if (format === 'json') {
+      return jsonOutput_({ ok: false, error: 'build_failed', message: String(err.message || err) });
+    }
+    return liffHtmlOutput_('<p>集計に失敗しました: ' + escapeHtml_(String(err.message || err)) + '</p>');
+  }
+
+  if (format === 'json') return jsonOutput_(model);
+  return htmlWeeklyMessage_(weekStart, tokenParam, model);
+}
+
+/**
+ * 週次 LIFF HTML（§5.7）。
+ * カテゴリ別色分け積み上げ横棒グラフ（Y軸=曜日、X軸=達成率）を描画する。
+ * キャラクター（■2）は表示しない（W-5）。
+ */
+function htmlWeeklyMessage_(weekStartJst, tokenStr, model) {
+  var defaultWeekJson = JSON.stringify(weekStartJst);
+  var defaultTokenJson = JSON.stringify(String(tokenStr || ''));
+  var bakedJson = (model && model.ok) ? JSON.stringify(model) : 'null';
+
+  var css = [
+    '*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}',
+    'body{font-family:"Noto Sans JP","Hiragino Kaku Gothic ProN",system-ui,sans-serif;',
+    'padding:env(safe-area-inset-top,0) 16px calc(40px + env(safe-area-inset-bottom,0));',
+    'max-width:480px;margin:0 auto;background:#fafafa;color:#1E293B;}',
+    '#st{min-height:1.4em;padding:10px 0 2px;font-size:13px;color:#64748B;}',
+    '.top{text-align:center;padding:16px 0 10px;}',
+    '.period{font-size:12px;color:#94A3B8;margin:0 0 6px;letter-spacing:.04em;}',
+    '.wpct{font-size:48px;font-weight:900;color:#1E293B;margin:0;line-height:1.1;}',
+    '.mood{font-size:15px;font-weight:700;color:#64748B;margin:6px 0 0;}',
+    '.notice{font-size:11px;color:#B45309;background:#FFFBEB;border:1px solid #FDE68A;',
+    'border-radius:8px;padding:6px 12px;margin:10px auto 0;display:inline-block;}',
+    'h2{font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.06em;',
+    'margin:20px 0 10px;border-bottom:1px solid #E2E8F0;padding-bottom:4px;}',
+    '.chart{display:flex;flex-direction:column;gap:12px;margin:0 0 16px;}',
+    '.day-row{display:flex;align-items:center;gap:8px;}',
+    '.dow{font-size:13px;font-weight:700;color:#475569;width:22px;flex-shrink:0;text-align:right;}',
+    '.bar-wrap{flex:1;height:26px;background:#F1F5F9;border-radius:6px;overflow:hidden;display:flex;}',
+    '.bar-seg{height:100%;}',
+    '.bar-pct{font-size:12px;font-weight:700;color:#475569;width:38px;flex-shrink:0;text-align:right;}',
+    '.no-data-lbl{height:100%;width:100%;display:flex;align-items:center;padding:0 10px;font-size:11px;color:#94A3B8;font-style:italic;}',
+    '.legend{display:flex;flex-wrap:wrap;gap:10px;margin:4px 0 16px;}',
+    '.leg{display:flex;align-items:center;gap:5px;font-size:12px;color:#64748B;}',
+    '.ldot{width:9px;height:9px;border-radius:50%;flex-shrink:0;}',
+    '.footer{margin-top:24px;padding-top:12px;border-top:1px solid #E2E8F0;font-size:11px;color:#94A3B8;text-align:center;}',
+  ].join('');
+
+  var js = [
+    '(function(){',
+    'var WS=' + defaultWeekJson + ',T=' + defaultTokenJson + ';',
+    'var __D__=' + bakedJson + ';',
+    'var root=document.getElementById("app"),stEl=document.getElementById("st");',
+    'function h(tag,text,cls){var e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;}',
+    'function sc(c){var s=String(c||"#94A3B8").trim();return/^(#[0-9a-fA-F]{3,8}|rgb[a]?\\([^)]*\\)|[a-zA-Z]{2,30})$/.test(s)?s:"#94A3B8";}',
+    'function fmt(d){var p=d.split("-");return parseInt(p[1],10)+"/"+parseInt(p[2],10);}',
+    'function paint(data){',
+    '  if(!data||data.ok===false){stEl.textContent="エラー: "+(data&&data.error||"unknown");return;}',
+    '  stEl.textContent="";while(root.firstChild)root.removeChild(root.firstChild);',
+    '  var frag=document.createDocumentFragment();',
+    // ヘッダ: 期間・週次達成率・メッセージ
+    '  var top=document.createElement("div");top.className="top";',
+    '  top.appendChild(h("p",fmt(data.week_start||"")+"（月）〜"+fmt(data.week_end||"")+"（金）","period"));',
+    '  top.appendChild(h("p",data.no_data?"－":data.weekly_achievement_percent+"%","wpct"));',
+    '  top.appendChild(h("p",data.mood_message||"","mood"));',
+    '  if(!data.no_data&&(data.data_days||0)<5){',
+    '    top.appendChild(h("div","今週は"+data.data_days+"日分のデータで集計しています","notice"));}',
+    '  frag.appendChild(top);',
+    // 全日からカテゴリ情報を収集（凡例・色用）
+    '  var catSet={},catOrder=[];',
+    '  var days=data.days||[];',
+    '  for(var di=0;di<days.length;di++){var cs=days[di].categories||[];',
+    '    for(var ci=0;ci<cs.length;ci++){var c=cs[ci];if(!catSet[c.category_id]){',
+    '      catSet[c.category_id]={display_name:c.display_name,color:c.color,sort_order:c.sort_order||999};',
+    '      catOrder.push(c.category_id);}}}',
+    '  catOrder.sort(function(a,b){return(catSet[a].sort_order||999)-(catSet[b].sort_order||999);});',
+    // グラフ
+    '  frag.appendChild(h("h2","曜日別達成率"));',
+    '  var chart=document.createElement("div");chart.className="chart";',
+    '  for(var di=0;di<days.length;di++){',
+    '    var day=days[di];',
+    '    var row=document.createElement("div");row.className="day-row";',
+    '    row.appendChild(h("span",day.dow,"dow"));',
+    '    var bw=document.createElement("div");bw.className="bar-wrap";',
+    '    if(!day.has_data){',
+    '      bw.appendChild(h("div","未記入","no-data-lbl"));',
+    '    }else{',
+    '      var total=day.counts&&day.counts.total?day.counts.total:0;',
+    '      var dc=day.categories||[];',
+    '      for(var ci=0;ci<dc.length;ci++){var cat=dc[ci];if(!cat.done)continue;',
+    '        var seg=document.createElement("div");seg.className="bar-seg";',
+    '        seg.style.width=(total>0?cat.done/total*100:0).toFixed(1)+"%";',
+    '        seg.style.background=sc(cat.color);bw.appendChild(seg);}',
+    '    }',
+    '    row.appendChild(bw);',
+    '    row.appendChild(h("span",day.has_data?day.achievement_percent+"%":"－","bar-pct"));',
+    '    chart.appendChild(row);',
+    '  }',
+    '  frag.appendChild(chart);',
+    // 凡例
+    '  if(catOrder.length>0){var leg=document.createElement("div");leg.className="legend";',
+    '    for(var ki=0;ki<catOrder.length;ki++){var cid=catOrder[ki];var ci=catSet[cid];',
+    '      var item=document.createElement("div");item.className="leg";',
+    '      var dot=document.createElement("span");dot.className="ldot";dot.style.background=sc(ci.color);',
+    '      item.appendChild(dot);item.appendChild(h("span",ci.display_name));leg.appendChild(item);}',
+    '    frag.appendChild(leg);}',
+    '  root.appendChild(frag);',
+    '}',
+    // 埋め込みデータがあれば即描画、なければ RPC
+    'if(__D__&&__D__.ok===true){stEl.textContent="";paint(__D__);}',
+    'else{google.script.run.withSuccessHandler(paint).withFailureHandler(function(err){stEl.textContent="取得に失敗しました: "+(err&&err.message?err.message:String(err));}).getWeeklyDashboardJsonForClient(WS,T);}',
+    '})();',
+  ].join('\n');
+
+  var html =
+    '<!DOCTYPE html><html><head>' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' +
+    '<meta charset="UTF-8"><title>やったかい 週次振り返り</title>' +
+    '<style>' + css + '</style>' +
+    '</head><body>' +
+    '<p id="st">読み込み中…</p>' +
+    '<div id="app"></div>' +
+    '<script>' + js + '<\/script>' +
+    '</body></html>';
+
+  return liffHtmlOutput_(html);
+}
+
+/**
+ * 投資図解「24時間」ページの URL をメールで送る（エディタから手動実行）。
+ * スクリプトプロパティ:
+ *   INVEST24H_PAGE_URL（任意）… 未設定時は https://invest-24h-20260422.surge.sh/
+ *   INVEST24H_NOTIFY_TO（任意）… カンマ区切りの送信先。未設定時は Session.getActiveUser().getEmail()
+ * Gmail の送信制限・スパム判定は Google 側のポリシーに従う。
+ */
+function sendInvest24hDigestEmail() {
+  var props = PropertiesService.getScriptProperties();
+  var url = (props.getProperty('INVEST24H_PAGE_URL') || 'https://invest-24h-20260422.surge.sh/').trim();
+  var toRaw = (props.getProperty('INVEST24H_NOTIFY_TO') || '').trim();
+  var recipients = [];
+  if (toRaw) {
+    var parts = toRaw.split(',');
+    for (var i = 0; i < parts.length; i++) {
+      var e = String(parts[i] || '').trim();
+      if (e) recipients.push(e);
+    }
+  }
+  if (recipients.length === 0) {
+    var self = Session.getActiveUser().getEmail();
+    if (!self) throw new Error('送信先メールが取得できません。INVEST24H_NOTIFY_TO を設定するか、ログインしたユーザーで実行してください。');
+    recipients.push(self);
+  }
+  var subject = '【投資図解】24時間まとめ ' + Utilities.formatDate(new Date(), TZ_, 'yyyy-MM-dd');
+  var body =
+    '投資図解（直近24時間まとめ）を更新しました。\n\n' +
+    url +
+    '\n\n---\nやったかい GAS（sendInvest24hDigestEmail）から送信';
+  for (var j = 0; j < recipients.length; j++) {
+    MailApp.sendEmail({ to: recipients[j], subject: subject, body: body });
+    Logger.log('[sendInvest24hDigestEmail] sent to ' + recipients[j]);
+  }
 }
 
 function linePushText_(token, userId, text) {
@@ -1741,6 +2450,45 @@ function linePushText_(token, userId, text) {
   if (code !== 200) {
     throw new Error('LINE push HTTP ' + code + ': ' + body);
   }
+}
+
+/**
+ * 週次 LINE 専用。429 / 5xx 時は短い待ちのあと最大 3 回まで再試行する。
+ * 日次・朝は linePushText_ のみ（挙動を変えない）。
+ * @returns {boolean} いずれかの試行で HTTP 200 なら true
+ * @private
+ */
+function linePushTextWeekly_(token, userId, text) {
+  var url = 'https://api.line.me/v2/bot/message/push';
+  var maxAttempts = 3;
+  var pauseMs = [0, 1500, 3500];
+  for (var attempt = 0; attempt < maxAttempts; attempt++) {
+    if (pauseMs[attempt] > 0) Utilities.sleep(pauseMs[attempt]);
+    var payload = {
+      to: userId,
+      messages: [{ type: 'text', text: text }],
+    };
+    var options = {
+      method: 'post',
+      contentType: 'application/json',
+      headers: { Authorization: 'Bearer ' + token },
+      payload: JSON.stringify(payload),
+      muteHttpExceptions: true,
+    };
+    try {
+      var res = UrlFetchApp.fetch(url, options);
+      var code = res.getResponseCode();
+      var body = res.getContentText();
+      if (code === 200) return true;
+      var snippet = body && String(body).length > 500 ? String(body).slice(0, 500) + '…' : String(body);
+      Logger.log('[linePushTextWeekly_] attempt ' + (attempt + 1) + '/' + maxAttempts + ' HTTP ' + code + ' ' + snippet);
+      if (code === 429 || (code >= 500 && code <= 599)) continue;
+      return false;
+    } catch (fetchErr) {
+      Logger.log('[linePushTextWeekly_] attempt ' + (attempt + 1) + ' fetch error: ' + String(fetchErr));
+    }
+  }
+  return false;
 }
 
 /**

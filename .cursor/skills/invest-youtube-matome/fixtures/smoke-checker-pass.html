@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>invest-youtube-matome checker smoke</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --iyt-navy: #0f172a;
+      --iyt-navy-mid: #1e3a5f;
+      --iyt-gold: #854d0e;
+    }
+    body { font-family: 'Noto Sans JP', 'Inter', system-ui, sans-serif; }
+    .iyt-header-gradient {
+      background: linear-gradient(135deg, var(--iyt-navy) 0%, var(--iyt-navy-mid) 45%, var(--iyt-gold) 100%);
+    }
+    .section-card {
+      background: #fff;
+      border-radius: 1rem;
+      box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+      border: 1px solid #e2e8f0;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 pb-8">
+  <header class="iyt-header-gradient text-white px-4 py-8">
+    <div class="max-w-3xl mx-auto">
+      <p class="text-sm opacity-90 mb-2">作成: 2026-04-24 JST</p>
+      <h1 class="text-2xl font-bold">スモーク検証用ページ</h1>
+      <p class="mt-2 text-sm opacity-95">対象動画は直近2日（JST）の窓を前提とします。</p>
+    </div>
+  </header>
+
+  <main class="max-w-3xl mx-auto px-4 -mt-4 relative z-10">
+    <section class="section-card" id="iyt-executive">
+      <h2 class="text-lg font-bold text-slate-800 mb-2">いまいちばん揉めていること</h2>
+      <p class="text-slate-700">金利見通しとハイテク評価のズレが最大の論点です。</p>
+      <p class="text-slate-700">まずは米金利クラスタの表と裏取りを見る価値があります。</p>
+    </section>
+
+    <section class="section-card" id="iyt-read-path">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-xl bg-amber-500 flex items-center justify-center">
+          <i data-lucide="list-tree" class="w-5 h-5 text-white"></i>
+        </div>
+        <h2 class="text-xl font-bold text-slate-800">まず読む3つ</h2>
+      </div>
+      <div class="grid gap-3 text-sm text-slate-700">
+        <div class="flex gap-3 p-3 rounded-lg border border-slate-200 bg-amber-50">
+          <span class="font-bold text-amber-700">1</span>
+          <p>要点1（レール）</p>
+        </div>
+        <div class="flex gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50">
+          <span class="font-bold text-slate-600">2</span>
+          <p>要点2</p>
+        </div>
+        <div class="flex gap-3 p-3 rounded-lg border border-slate-200 bg-slate-50">
+          <span class="font-bold text-slate-600">3</span>
+          <p>要点3</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card" id="iyt-dual-signal">
+      <h2 class="text-lg font-bold text-slate-800 mb-2">二重信号機</h2>
+      <p class="text-slate-700 text-sm">短期リスク指標と中期トレンド指標の読みが分かれている可能性に注意。</p>
+    </section>
+
+    <section class="section-card">
+      <table class="w-full text-sm border-collapse">
+        <caption class="text-left text-slate-600 mb-2">スモーク用の最小表</caption>
+        <thead><tr class="bg-slate-100"><th scope="col" class="p-2 text-left">列</th></tr></thead>
+        <tbody><tr><td class="p-2 border-t border-slate-200">セル</td></tr></tbody>
+      </table>
+      <p class="mt-3 text-sm">
+        <a href="https://www.youtube.com/watch?v=dQw4w9WgXcQ" class="text-blue-700 underline">参考動画（例）</a>
+      </p>
+    </section>
+
+    <section class="section-card text-sm text-slate-700">
+      <p>代表主張の整理では「前提ズレ」と「本音の対立」のラベルを使い分けます。</p>
+    </section>
+
+    <section class="section-card" id="iyt-character-dialogue" aria-label="ヒロ子とイチさんの短い解説">
+      <h2 class="text-lg font-bold text-slate-800 mb-3">ひとこと解説</h2>
+      <div class="space-y-3 text-sm text-slate-800">
+        <p><span class="font-bold text-pink-700">ヒロ子:</span> 表だけだとどこから見ればいいか迷っちゃうよね。</p>
+        <p><span class="font-bold text-slate-800">イチさん:</span> ワシらはまず「いま揉めている行」を見るのが近道じゃ。</p>
+      </div>
+    </section>
+
+    <section class="section-card" id="iyt-my-strategy" aria-label="自分の出口戦略メモ（保存されません）">
+      <h2 class="text-lg font-bold text-slate-800">My Strategy</h2>
+      <p class="text-sm text-slate-600 mt-2">この欄に入力した内容は保存されません。</p>
+      <ul class="mt-2 text-sm text-slate-600 list-disc list-inside">
+        <li>利確条件のメモ</li>
+        <li>損切り条件のメモ</li>
+        <li>様子見条件のメモ</li>
+      </ul>
+    </section>
+
+    <section class="section-card text-sm text-slate-700">
+      <p>本ページは情報整理です。投資は自己責任であり、投資助言ではありません。</p>
+    </section>
+  </main>
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

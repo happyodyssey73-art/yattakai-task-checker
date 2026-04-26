@@ -1,0 +1,559 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>投資YouTube比較（2026-04-25）— 日銀ウィーク×米Fedの読み分け</title>
+  <meta property="og:title" content="投資YouTube比較（2026-04-25）— 日銀ウィーク×米Fedの読み分け">
+  <meta property="og:description" content="日銀・国債オペ・米金利をクラスタ別に整理。図解とニュース裏取りつき（compact）。">
+  <meta property="og:url" content="https://invest-youtube-matome-20260425.surge.sh/">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root {
+      --iyt-navy: #0f172a;
+      --iyt-navy-mid: #1e3a5f;
+      --iyt-gold: #854d0e;
+    }
+    body { font-family: 'Noto Sans JP', 'Inter', system-ui, sans-serif; }
+    .iyt-header-gradient {
+      background: linear-gradient(135deg, var(--iyt-navy) 0%, var(--iyt-navy-mid) 45%, var(--iyt-gold) 100%);
+    }
+    .section-card {
+      background: #fff;
+      border-radius: 1rem;
+      box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+      border: 1px solid #e2e8f0;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .toc-float {
+      position: fixed; top: 6rem; right: 1rem; width: 13rem; z-index: 40; display: none;
+    }
+    @media (min-width: 1100px) { .toc-float { display: block; } }
+    .iyt-svg-label { font-size: 11px; fill: #334155; font-weight: 600; }
+    .iyt-svg-note { font-size: 10px; fill: #64748b; }
+    /* キャラ会話 UI: 再利用スコープ（.iyt-chat-surface） */
+    .iyt-chat-surface .iyt-chat-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 1rem;
+    }
+    .iyt-chat-surface .iyt-chat-row + .iyt-chat-row {
+      margin-top: 1.35rem;
+    }
+    .iyt-chat-surface .iyt-chat-row--master {
+      flex-direction: row-reverse;
+    }
+    .iyt-chat-surface .iyt-avatar {
+      width: 4.5rem;
+      height: 4.5rem;
+      border-radius: 9999px;
+      overflow: hidden;
+      flex-shrink: 0;
+      box-shadow: 0 4px 6px -1px rgb(15 23 42 / 0.12);
+    }
+    .iyt-chat-surface .iyt-avatar--hiro { border: 2px solid #f472b6; }
+    .iyt-chat-surface .iyt-avatar--master { border: 2px solid #ca8a04; }
+    .iyt-chat-surface .iyt-avatar img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      object-position: center;
+      display: block;
+      background: linear-gradient(180deg, #fff 0%, #f8fafc 100%);
+    }
+    .iyt-chat-surface .iyt-bubble {
+      position: relative;
+      flex: 1 1 0%;
+      min-width: 0;
+      border-radius: 1rem;
+      padding: 1rem 1.125rem;
+      border-width: 2px;
+      border-style: solid;
+      line-height: 1.65;
+    }
+    .iyt-chat-surface .iyt-bubble--hiro {
+      background: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%);
+      border-color: #f472b6;
+    }
+    .iyt-chat-surface .iyt-bubble--master {
+      background: linear-gradient(135deg, #eff6ff 0%, #e0f2fe 100%);
+      border-color: #1e3a5f;
+    }
+    .iyt-chat-surface .iyt-chat-row--hiro .iyt-bubble--hiro::before {
+      content: "";
+      position: absolute;
+      left: -8px;
+      top: 1.25rem;
+      border-style: solid;
+      border-width: 8px 10px 8px 0;
+      border-color: transparent #f472b6 transparent transparent;
+    }
+    .iyt-chat-surface .iyt-chat-row--master .iyt-bubble--master::before {
+      content: "";
+      position: absolute;
+      right: -8px;
+      left: auto;
+      top: 1.25rem;
+      border-style: solid;
+      border-width: 8px 0 8px 10px;
+      border-color: transparent transparent transparent #1e3a5f;
+    }
+  </style>
+</head>
+<body class="bg-slate-50 pb-24">
+  <header class="iyt-header-gradient text-white px-4 py-10">
+    <div class="max-w-3xl mx-auto">
+      <p class="text-sm opacity-90 mb-2">作成: 2026-04-25 JST</p>
+      <h1 class="text-2xl md:text-3xl font-bold leading-tight">投資YouTube比較：日銀ウィーク×米Fedの読み分け（図解つき）</h1>
+      <p class="mt-3 text-sm md:text-base opacity-95">対象動画: <strong>直近7日</strong>・JST（相場系に限定）／ニュース: 直近数日。主張の要約は<span class="underline decoration-amber-200">公開タイトル・説明欄ベース</span>。<strong>自動字幕</strong>の誤認識に注意。</p>
+    </div>
+  </header>
+
+  <nav class="toc-float section-card text-sm" aria-label="ページ内目次">
+    <div class="font-bold text-slate-800 mb-2 flex items-center gap-1">
+      <i data-lucide="list" class="w-4 h-4"></i> 目次
+    </div>
+    <ul class="space-y-1 text-blue-800">
+      <li><a href="#iyt-executive" class="hover:underline">要約</a></li>
+      <li><a href="#iyt-read-path" class="hover:underline">まず読む3つ</a></li>
+      <li><a href="#iyt-diagram" class="hover:underline">図解</a></li>
+      <li><a href="#iyt-dual-signal" class="hover:underline">二重信号</a></li>
+      <li><a href="#cluster-fed" class="hover:underline">米金利</a></li>
+      <li><a href="#cluster-jp" class="hover:underline">日銀・日経</a></li>
+      <li><a href="#iyt-two-claims" class="hover:underline">代表2主張</a></li>
+      <li><a href="#iyt-verify" class="hover:underline">裏取り</a></li>
+      <li><a href="#iyt-character-dialogue" class="hover:underline">ひとこと解説</a></li>
+      <li><a href="#iyt-my-strategy" class="hover:underline">My Strategy</a></li>
+    </ul>
+  </nav>
+
+  <main class="max-w-3xl mx-auto px-4 -mt-6 relative z-10">
+    <section class="section-card" id="iyt-executive">
+      <h2 class="text-lg font-bold text-slate-800 mb-2">いまいちばん揉めていること</h2>
+      <p class="text-slate-700">国内は<strong>政策金利の据置き観測</strong>と<strong>国債買い入れペース調整</strong>、<strong>物価見通しの修正</strong>が同じ週に並ぶ一方、海外は<strong>米利下げの時期</strong>を巡ってエコノミスト調査と市場の腹が食い違いやすい。</p>
+      <p class="text-slate-700">迷子防止は、図解の「3レッグ」で<strong>自分が今どのレッグの話を聞いているか</strong>を決めてから表を読むこと。</p>
+    </section>
+
+    <section class="section-card" id="iyt-read-path">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-12 h-12 rounded-xl flex items-center justify-center bg-gradient-to-br from-amber-600 to-amber-400">
+          <i data-lucide="list-tree" class="w-6 h-6 text-white"></i>
+        </div>
+        <div>
+          <h2 class="text-2xl font-bold text-slate-800">まず読む3つ（今日のレール）</h2>
+          <p class="text-slate-500 text-sm">表に入る前にここだけ</p>
+        </div>
+      </div>
+      <div class="grid gap-4">
+        <div class="flex items-start gap-4 p-4 rounded-xl border-l-4 border-amber-500 bg-amber-50">
+          <div class="w-10 h-10 bg-amber-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">1</div>
+          <p class="text-slate-700 text-sm"><strong>日銀</strong>は「4月据置き→6月で再判断」という<strong>二段構え</strong>が報じられやすい。YouTubeの一行は<strong>どの会合</strong>を指しているか先に確認する。</p>
+        </div>
+        <div class="flex items-start gap-4 p-4 rounded-xl border-l-4 border-slate-400 bg-slate-50">
+          <div class="w-10 h-10 bg-slate-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">2</div>
+          <p class="text-slate-700 text-sm"><strong>国債オペ</strong>は金利政策とは別レッグ。減額ペースの<strong>緩和</strong>などは「金融条件が急に緩む」話ではなく、<strong>調整の速度</strong>の話として切り分ける。</p>
+        </div>
+        <div class="flex items-start gap-4 p-4 rounded-xl border-l-4 border-slate-400 bg-slate-50">
+          <div class="w-10 h-10 bg-slate-600 text-white rounded-full flex items-center justify-center font-bold flex-shrink-0">3</div>
+          <p class="text-slate-700 text-sm"><strong>米Fed</strong>は Reuters 調査とブローカー予想で<strong>年内カット回数</strong>の幅が出る。動画が「エコノ寄り」か「市場価格（織り込み）寄り」かで温度が変わる。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card" id="iyt-diagram" aria-label="日銀ブロックの三レッグ図解">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-lg bg-indigo-100 flex items-center justify-center">
+          <i data-lucide="map" class="w-5 h-5 text-indigo-700"></i>
+        </div>
+        <h2 class="text-xl font-bold text-slate-800">図解：日銀ニュースが「三本柱」で進むときの読み方</h2>
+      </div>
+      <p class="text-sm text-slate-600 mb-4">同じ「日銀」の見出しでも、下の3つは<strong>別の配線</strong>。YouTubeは強いテーマに引っ張られて<strong>1本だけ</strong>が太く見えがち。</p>
+      <div class="rounded-xl border border-slate-200 bg-slate-50 p-4 overflow-x-auto">
+        <svg viewBox="0 0 560 260" width="100%" height="auto" role="img" aria-labelledby="iyt-svg-title2">
+          <title id="iyt-svg-title2">日銀関連ニュースの三本柱とYouTubeの切り取り</title>
+          <text x="280" y="18" text-anchor="middle" font-size="12" fill="#0f172a" font-weight="700">報道フロー（国内・同時進行しがち）</text>
+          <rect x="24" y="32" width="150" height="56" rx="10" fill="#dbeafe" stroke="#2563eb" stroke-width="2"/>
+          <text x="99" y="58" text-anchor="middle" font-size="11" fill="#1e3a8a" font-weight="600">短期政策金利</text>
+          <text x="99" y="74" text-anchor="middle" font-size="10" fill="#475569">据置き／利上げの公算</text>
+          <rect x="205" y="32" width="150" height="56" rx="10" fill="#fef9c3" stroke="#ca8a04" stroke-width="2"/>
+          <text x="280" y="58" text-anchor="middle" font-size="11" fill="#854d0e" font-weight="600">国債オペ・数量</text>
+          <text x="280" y="74" text-anchor="middle" font-size="10" fill="#475569">買入れペース等</text>
+          <rect x="386" y="32" width="150" height="56" rx="10" fill="#fce7f3" stroke="#db2777" stroke-width="2"/>
+          <text x="461" y="58" text-anchor="middle" font-size="11" fill="#9d174d" font-weight="600">株・長期金利</text>
+          <text x="461" y="74" text-anchor="middle" font-size="10" fill="#475569">日経・円金利の反応</text>
+          <path d="M 99 88 L 99 108" stroke="#64748b" stroke-width="2"/>
+          <path d="M 280 88 L 280 108" stroke="#64748b" stroke-width="2"/>
+          <path d="M 461 88 L 461 108" stroke="#64748b" stroke-width="2"/>
+          <polygon points="99,108 94,118 104,118" fill="#64748b"/>
+          <polygon points="280,108 275,118 285,118" fill="#64748b"/>
+          <polygon points="461,108 456,118 466,118" fill="#64748b"/>
+          <rect x="40" y="124" width="480" height="44" rx="10" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1.5"/>
+          <text x="280" y="152" text-anchor="middle" font-size="11" fill="#334155" font-weight="600">YouTubeの一行は「どの箱」を拡大解釈しているか</text>
+          <text x="280" y="166" text-anchor="middle" font-size="10" fill="#64748b">見出しが同じ「日銀」でも、中身は上の3つに分岐</text>
+          <rect x="40" y="188" width="480" height="56" rx="10" fill="#fff" stroke="#cbd5e1"/>
+          <text x="56" y="214" font-size="10" fill="#475569">左寄りチャンネル: 金利・会合の<strong>日程</strong></text>
+          <text x="56" y="228" font-size="10" fill="#475569">右寄りチャンネル: <strong>指数・水準</strong>の売買ゾーン</text>
+          <text x="320" y="222" font-size="10" fill="#64748b">米Fedクラスタは別図式（下の表）</text>
+        </svg>
+      </div>
+      <p class="text-xs text-slate-500 mt-2">図は概念整理。数値・確度は元記事・動画で確認すること。</p>
+    </section>
+
+    <section class="section-card iyt-chat-surface" aria-label="図解のあとに一度だけ噛む（キャラまとめ）">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-lg bg-pink-100 flex items-center justify-center">
+          <i data-lucide="messages-square" class="w-5 h-5 text-pink-700"></i>
+        </div>
+        <h2 class="text-lg font-bold text-slate-800">図解の読み方（ひとことで落とす）</h2>
+      </div>
+      <div class="iyt-chat-row iyt-chat-row--hiro">
+        <div class="iyt-avatar iyt-avatar--hiro">
+          <img src="assets/characters/hiroko-confused.png" width="72" height="72" alt="ヒロ子（整理・三本柱を箱として捉える）" loading="lazy" decoding="async">
+        </div>
+        <div class="iyt-bubble iyt-bubble--hiro">
+          <p class="text-slate-800 leading-relaxed m-0">
+            <span class="font-bold text-pink-700">ヒロ子:</span>
+            なるほど、「日銀」って単語じゃなくて、まず<strong>金利／オペ／株</strong>のどの箱の話か決めればいいんだね。
+          </p>
+        </div>
+      </div>
+      <div class="iyt-chat-row iyt-chat-row--master">
+        <div class="iyt-avatar iyt-avatar--master">
+          <img src="assets/characters/ichisan-serious.png" width="72" height="72" alt="イチさん（真剣・読む順を提示）" loading="lazy" decoding="async">
+        </div>
+        <div class="iyt-bubble iyt-bubble--master">
+          <p class="text-slate-800 leading-relaxed m-0">
+            <span class="font-bold" style="color:#1e3a5f;">イチさん:</span>
+            そうじゃ。箱を決めたら、次は <a class="text-blue-700 underline" href="#cluster-fed">米Fed表</a> で物差しを揃え、最後に <a class="text-blue-700 underline" href="#iyt-two-claims">代表2主張</a> でズレの種類を確定させるんじゃ。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card">
+      <div class="flex items-center gap-3 mb-2">
+        <div class="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center">
+          <i data-lucide="thermometer" class="w-5 h-5 text-slate-700"></i>
+        </div>
+        <h2 class="text-lg font-bold text-slate-800">市場体温ミニ（参考）</h2>
+      </div>
+      <p class="text-sm text-slate-600">日銀会合週はイベント密度が上がる。指数の水準は日々動くため、ここでは<strong>「高値圏＋材料待ち」</strong>程度の表現に留める（2026-04-25 JST 時点の報道トーン）。</p>
+    </section>
+
+    <section class="section-card" id="iyt-dual-signal" aria-label="話題の勢いと市場の注意度">
+      <h2 class="text-lg font-bold text-slate-800 mb-3">二重信号機</h2>
+      <div class="flex flex-col sm:flex-row gap-6 items-start">
+        <div class="flex items-center gap-3">
+          <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-emerald-100 text-emerald-800 font-bold text-sm" title="勢い：やや活発">緑</span>
+          <div>
+            <p class="font-semibold text-slate-800 text-sm">話題の勢い（左）</p>
+            <p class="text-xs text-slate-600">日銀・国債・米Fedが採用動画で束ねられやすい週。話題のまとまりはやや強い。</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-3">
+          <span class="inline-flex h-10 w-10 items-center justify-center rounded-full bg-amber-100 text-amber-800 font-bold text-sm" title="注意：普通〜やや高め">黄</span>
+          <div>
+            <p class="font-semibold text-slate-800 text-sm">市場の注意（右）</p>
+            <p class="text-xs text-slate-600">地政学・物価ショックの不確実性が報じられ、楽観と警戒が併存。売買指示には換算しない。</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card" id="cluster-fed">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+          <i data-lucide="table-2" class="w-5 h-5 text-slate-700"></i>
+        </div>
+        <h2 class="text-xl font-bold text-slate-800">クラスタ: 米Fed・利下げとハイテク評価</h2>
+      </div>
+      <p class="text-xs text-slate-500 mb-3 md:hidden">スマホ: カードを縦に読む。</p>
+      <div class="md:hidden space-y-3">
+        <div class="rounded-lg border border-slate-200 p-3 text-sm">
+          <p class="font-bold text-slate-800">@buffett_taro</p>
+          <p class="text-slate-600 mt-1">地政学の<strong>後退・悪化</strong>を材料にした<strong>セクター配分</strong>の話へ接続されやすい。</p>
+          <p class="text-xs text-slate-500 mt-1">evidence: タイトル・説明欄ベース</p>
+          <a class="text-blue-700 underline text-xs mt-2 inline-block" href="https://www.youtube.com/watch?v=DRsiMMX9IAk">動画を開く</a>
+        </div>
+        <div class="rounded-lg border border-slate-200 p-3 text-sm">
+          <p class="font-bold text-slate-800">@DanTakahashi1</p>
+          <p class="text-slate-600 mt-1"><strong>バブル・ピークアウト</strong>の問いと、割高感の話が前面になりやすい。</p>
+          <p class="text-xs text-slate-500 mt-1">evidence: タイトル・説明欄ベース</p>
+          <a class="text-blue-700 underline text-xs mt-2 inline-block" href="https://www.youtube.com/watch?v=gdCYKMLdIp4">動画を開く</a>
+        </div>
+        <div class="rounded-lg border border-slate-200 p-3 text-sm">
+          <p class="font-bold text-slate-800">@invest_study</p>
+          <p class="text-slate-600 mt-1">2026年4月時点の<strong>米テック</strong>評価や指数水準の話題に触れる回（タイトル・更新月からの要約）。</p>
+          <p class="text-xs text-slate-500 mt-1">evidence: タイトル・説明欄ベース</p>
+          <a class="text-blue-700 underline text-xs mt-2 inline-block" href="https://www.youtube.com/watch?v=Ae0WAK-5Iag">動画を開く</a>
+        </div>
+      </div>
+      <div class="hidden md:block overflow-x-auto">
+        <table class="min-w-full text-sm border-collapse border border-slate-200">
+          <caption class="text-left text-slate-600 mb-2 px-1">米金利・ハイテク観の比較（要約は解釈を含む）</caption>
+          <thead>
+            <tr class="bg-slate-100">
+              <th scope="col" class="p-2 text-left border border-slate-200">チャンネル</th>
+              <th scope="col" class="p-2 text-left border border-slate-200">主張の一行</th>
+              <th scope="col" class="p-2 text-left border border-slate-200">根拠メモ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row" class="p-2 border border-slate-200 font-semibold text-slate-800">@buffett_taro</th>
+              <td class="p-2 border border-slate-200 text-slate-700"><span data-iyt-quote="1">遠方の戦争を理由に買うパターンは今回は限定的</span>という論点から、地政学の変化と<strong>株のセクター</strong>を結びつける語り。</td>
+              <td class="p-2 border border-slate-200 text-xs text-slate-500">タイトル・概要／自動字幕の誤認識に注意</td>
+            </tr>
+            <tr>
+              <th scope="row" class="p-2 border border-slate-200 font-semibold text-slate-800">@DanTakahashi1</th>
+              <td class="p-2 border border-slate-200 text-slate-700"><span data-iyt-quote="1">バブルピークか</span>のような<strong>過熱</strong>の問い。金利より<strong>価格水準</strong>の議論が厚くなりやすい。</td>
+              <td class="p-2 border border-slate-200 text-xs text-slate-500">タイトル・概要／自動字幕の誤認識に注意</td>
+            </tr>
+            <tr>
+              <th scope="row" class="p-2 border border-slate-200 font-semibold text-slate-800">@invest_study</th>
+              <td class="p-2 border border-slate-200 text-slate-700"><span data-iyt-quote="1">米テックは割安か割高か</span>のような、<strong>2026年春時点</strong>の更新回。インデックス水準とセットで語られやすい。</td>
+              <td class="p-2 border border-slate-200 text-xs text-slate-500">タイトル・概要／自動字幕の誤認識に注意</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="text-xs mt-2"><a class="text-blue-700 underline" href="https://www.youtube.com/watch?v=DRsiMMX9IAk">@buffett_taro</a> · <a class="text-blue-700 underline" href="https://www.youtube.com/watch?v=gdCYKMLdIp4">@DanTakahashi1</a> · <a class="text-blue-700 underline" href="https://www.youtube.com/watch?v=Ae0WAK-5Iag">@invest_study</a></p>
+      </div>
+    </section>
+
+    <section class="section-card" id="cluster-jp">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+          <i data-lucide="table-2" class="w-5 h-5 text-slate-700"></i>
+        </div>
+        <h2 class="text-xl font-bold text-slate-800">クラスタ: 日銀・国債・日経</h2>
+      </div>
+      <div class="md:hidden space-y-3">
+        <div class="rounded-lg border border-slate-200 p-3 text-sm">
+          <p class="font-bold text-slate-800">@tabbata</p>
+          <p class="text-slate-600 mt-1"><strong>4月利上げ見送り</strong>と日本株の位置づけを、政策金利・長期金利と横に並べて語る回。</p>
+          <p class="text-xs text-slate-500 mt-1">evidence: タイトル・説明欄ベース</p>
+          <a class="text-blue-700 underline text-xs mt-2 inline-block" href="https://www.youtube.com/watch?v=5S80n10Z4OI">動画を開く</a>
+        </div>
+        <div class="rounded-lg border border-slate-200 p-3 text-sm">
+          <p class="font-bold text-slate-800">@nobujuku</p>
+          <p class="text-slate-600 mt-1"><strong>指数・為替の水準</strong>で売買ゾーンを語る回。会合カレンダーとは別レイヤの説明が混ざる。</p>
+          <p class="text-xs text-slate-500 mt-1">evidence: タイトル・説明欄ベース</p>
+          <a class="text-blue-700 underline text-xs mt-2 inline-block" href="https://www.youtube.com/watch?v=qf7uzyFrKS4">動画を開く</a>
+        </div>
+      </div>
+      <div class="hidden md:block overflow-x-auto">
+        <table class="min-w-full text-sm border-collapse border border-slate-200">
+          <caption class="text-left text-slate-600 mb-2 px-1">日本株・日銀クラスタ</caption>
+          <thead>
+            <tr class="bg-slate-100">
+              <th scope="col" class="p-2 text-left border border-slate-200">チャンネル</th>
+              <th scope="col" class="p-2 text-left border border-slate-200">主張の一行</th>
+              <th scope="col" class="p-2 text-left border border-slate-200">根拠メモ</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th scope="row" class="p-2 border border-slate-200 font-semibold text-slate-800">@tabbata</th>
+              <td class="p-2 border border-slate-200 text-slate-700"><span data-iyt-quote="1">日銀は4月利上げを見送りへ？</span>のように、会合と<strong>株・金利</strong>をセットで整理する語り。</td>
+              <td class="p-2 border border-slate-200 text-xs text-slate-500">タイトル・概要／自動字幕の誤認識に注意</td>
+            </tr>
+            <tr>
+              <th scope="row" class="p-2 border border-slate-200 font-semibold text-slate-800">@nobujuku</th>
+              <td class="p-2 border border-slate-200 text-slate-700"><span data-iyt-quote="1">水準とイベント</span>で指数・為替を読む語り。国債オペの細目より<strong>チャート寄り</strong>の回が並びやすい。</td>
+              <td class="p-2 border border-slate-200 text-xs text-slate-500">タイトル・概要／自動字幕の誤認識に注意</td>
+            </tr>
+          </tbody>
+        </table>
+        <p class="text-xs mt-2"><a class="text-blue-700 underline" href="https://www.youtube.com/watch?v=5S80n10Z4OI">@tabbata</a> · <a class="text-blue-700 underline" href="https://www.youtube.com/watch?v=qf7uzyFrKS4">@nobujuku</a></p>
+      </div>
+    </section>
+
+    <section class="section-card" id="iyt-two-claims" aria-label="代表2主張とラベル">
+      <h2 class="text-lg font-bold text-slate-800 mb-3">代表2主張とラベル</h2>
+      <div class="space-y-4 text-sm text-slate-700">
+        <div class="rounded-lg border border-slate-200 p-3 bg-slate-50">
+          <p class="font-semibold text-slate-800 mb-1">米金利クラスタ</p>
+          <p class="mb-1"><strong>代表A</strong>（フロー寄り）: 地政学の変化を手掛かりに<strong>配分を組み替える</strong>話。</p>
+          <p class="mb-1"><strong>代表B</strong>（ストック寄り）: <strong>バブル・割高</strong>として価格水準を正面から問う話。</p>
+          <p><span class="font-semibold text-amber-900">前提ズレ</span>：同じ「米株」でも、<strong>イベント後の資金移動</strong>と<strong>バリュエーション</strong>で物差しが違う。</p>
+        </div>
+        <div class="rounded-lg border border-slate-200 p-3 bg-slate-50">
+          <p class="font-semibold text-slate-800 mb-1">日銀クラスタ</p>
+          <p class="mb-1"><strong>代表A</strong>（会合レッグ）: <strong>据置き・次会合</strong>の見通しと、株の下支えイメージをセットで語る。</p>
+          <p class="mb-1"><strong>代表B</strong>（水準レッグ）: <strong>指数・為替のゾーン</strong>にフォーカルし、政策ニュースは背景に回す。</p>
+          <p><span class="font-semibold text-rose-900">本音の対立</span>：どちらも相場を語るが、<strong>カレンダー主導</strong>か<strong>チャート主導</strong>かで読みの軸がズレる。</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card iyt-chat-surface" aria-label="代表2主張のあとに一度だけ噛む（キャラまとめ）">
+      <div class="flex items-center gap-3 mb-4">
+        <div class="w-10 h-10 rounded-lg bg-slate-100 flex items-center justify-center">
+          <i data-lucide="messages-square" class="w-5 h-5 text-slate-700"></i>
+        </div>
+        <h2 class="text-lg font-bold text-slate-800">代表2主張の落ち（今日の結論）</h2>
+      </div>
+      <div class="iyt-chat-row iyt-chat-row--hiro">
+        <div class="iyt-avatar iyt-avatar--hiro">
+          <img src="assets/characters/hiroko-confused.png" width="72" height="72" alt="ヒロ子（整理・代表2主張の読み終わり）" loading="lazy" decoding="async">
+        </div>
+        <div class="iyt-bubble iyt-bubble--hiro">
+          <p class="text-slate-800 leading-relaxed m-0">
+            <span class="font-bold text-pink-700">ヒロ子:</span>
+            「前提ズレ」と「本音の対立」って、ケンカじゃなくて<strong>物差しが違う</strong>ってラベルなんだね。
+          </p>
+        </div>
+      </div>
+      <div class="iyt-chat-row iyt-chat-row--master">
+        <div class="iyt-avatar iyt-avatar--master">
+          <img src="assets/characters/ichisan-serious.png" width="72" height="72" alt="イチさん（真剣・裏取りへ繋ぐ）" loading="lazy" decoding="async">
+        </div>
+        <div class="iyt-bubble iyt-bubble--master">
+          <p class="text-slate-800 leading-relaxed m-0">
+            <span class="font-bold" style="color:#1e3a5f;">イチさん:</span>
+            そうじゃ。次は <a class="text-blue-700 underline" href="#iyt-verify">裏取り</a> で「中心がどこか」と「幅がどれだけか」を確認して、動画の熱量を落ち着いて扱え。
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card" id="iyt-verify">
+      <div class="flex items-center gap-3 mb-3">
+        <div class="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+          <i data-lucide="shield-check" class="w-5 h-5 text-emerald-800"></i>
+        </div>
+        <h2 class="text-xl font-bold text-slate-800">裏取りストリップ</h2>
+      </div>
+      <ul class="space-y-3 text-sm text-slate-700">
+        <li class="border-l-4 border-emerald-500 pl-3">
+          <span class="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 text-xs font-semibold mr-2">報道と整合</span>
+          <strong>日銀・4月</strong>：日経などでは、中東情勢の見極めを理由に<strong>4月は据置き・6月に判断持ち越し</strong>という公算が報じられている。
+          <a class="block text-blue-700 underline text-xs mt-1" href="https://www.nikkei.com/article/DGXZQOUB2116H0R20C26A4000000/">日本経済新聞</a>
+        </li>
+        <li class="border-l-4 border-emerald-500 pl-3">
+          <span class="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 text-xs font-semibold mr-2">報道と整合</span>
+          <strong>市場予想</strong>：市場関係者のアンケートでは<strong>現状維持</strong>予想が多数派という報道。
+          <a class="block text-blue-700 underline text-xs mt-1" href="https://www.nikkei.com/article/DGXZQOFL1927WTZ10C26A4000000/">日本経済新聞</a>
+        </li>
+        <li class="border-l-4 border-emerald-500 pl-3">
+          <span class="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 text-xs font-semibold mr-2">報道と整合</span>
+          <strong>米利下げ見通し</strong>：Reuters 調査で、戦争関連インフレなどを背景に<strong>利下げが後ろ倒し</strong>という見方が報じられている（英語一次）。
+          <a class="block text-blue-700 underline text-xs mt-1" href="https://www.reuters.com/world/middle-east/fed-rate-cut-pushed-back-late-2026-war-related-inflation-risks-2026-04-22/">Reuters</a>
+        </li>
+        <li class="border-l-4 border-emerald-500 pl-3">
+          <span class="inline-block px-2 py-0.5 rounded bg-emerald-100 text-emerald-900 text-xs font-semibold mr-2">報道と整合</span>
+          <strong>ウォラー理事</strong>：早期停戦なら利下げ余地、といった<strong>条件付き</strong>発言が Reuters で報じられている。
+          <a class="block text-blue-700 underline text-xs mt-1" href="https://www.reuters.com/business/feds-waller-says-swift-war-end-could-keep-rate-cut-hopes-alive-2026-04-17/">Reuters</a>
+        </li>
+        <li class="border-l-4 border-amber-400 pl-3">
+          <span class="inline-block px-2 py-0.5 rounded bg-amber-100 text-amber-900 text-xs font-semibold mr-2">一部のみ整合</span>
+          <strong>国債買い入れ</strong>：政策金利の話と<strong>別レッグ</strong>だが、動画タイトルでは「日銀」一括りになりやすい。ノーカット配信などで一次情報を当たると切り分けやすい。
+          <a class="block text-blue-700 underline text-xs mt-1" href="https://www.youtube.com/watch?v=ddBDbYHlU6E">日経テレコン（参考・動画）</a>
+        </li>
+        <li class="border-l-4 border-slate-300 pl-3">
+          <span class="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-800 text-xs font-semibold mr-2">時期の取り違いの可能性</span>
+          <strong>ブローカー予想</strong>：米では「2026年中に2回カット」など機関予想が並ぶ報道もある。エコノミスト調査の<strong>中央値と分布</strong>を取り違えないこと。
+          <a class="block text-blue-700 underline text-xs mt-1" href="https://www.reuters.com/business/finance/wall-street-brokerages-pencil-fed-rate-cuts-mid2026-2026-04-16/">Reuters</a>
+        </li>
+      </ul>
+
+      <div class="mt-5 rounded-xl border border-slate-200 bg-gradient-to-br from-slate-50 to-slate-100 p-4 iyt-chat-surface" aria-label="裏取りストリップのキャラまとめ（最後の落ち）">
+        <div class="iyt-chat-row iyt-chat-row--hiro">
+          <div class="iyt-avatar iyt-avatar--hiro">
+            <img src="assets/characters/hiroko-confused.png" width="64" height="64" alt="ヒロ子（整理・裏取りの読み終わり）" loading="lazy" decoding="async">
+          </div>
+          <div class="iyt-bubble iyt-bubble--hiro">
+            <p class="text-slate-800 leading-relaxed m-0 text-sm">
+              <span class="font-bold text-pink-700">ヒロ子:</span>
+              裏取り読んだら、結局「日銀」も「米Fed」も、単語じゃなくて<strong>どの箱の話か</strong>を決めれば迷子にならないってことだね。
+            </p>
+          </div>
+        </div>
+        <div class="iyt-chat-row iyt-chat-row--master mt-3">
+          <div class="iyt-avatar iyt-avatar--master">
+            <img src="assets/characters/ichisan-serious.png" width="64" height="64" alt="イチさん（締め・読む順の提案）" loading="lazy" decoding="async">
+          </div>
+          <div class="iyt-bubble iyt-bubble--master">
+            <p class="text-slate-800 leading-relaxed m-0 text-sm">
+              <span class="font-bold" style="color:#1e3a5f;">イチさん:</span>
+              そうじゃ。読み直すなら <a class="text-blue-700 underline" href="#iyt-diagram">図解（3レッグ）</a> → <a class="text-blue-700 underline" href="#cluster-fed">米Fed・ハイテク評価</a> → <a class="text-blue-700 underline" href="#iyt-two-claims">代表2主張とラベル</a> の順で、物差しを揃えてから表を噛め。
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card iyt-chat-surface" id="iyt-character-dialogue" aria-label="ヒロ子とイチさんの短い解説">
+      <div class="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between mb-4">
+        <div class="flex items-center gap-3">
+          <div class="w-10 h-10 rounded-lg bg-pink-100 flex items-center justify-center">
+            <i data-lucide="messages-square" class="w-5 h-5 text-pink-700"></i>
+          </div>
+          <h2 class="text-xl font-bold text-slate-800">ひとこと解説</h2>
+        </div>
+        <p class="text-xs text-slate-500 sm:text-right sm:max-w-xs">アバター: <code class="text-[11px] bg-slate-100 px-1 rounded">assets/characters/*.png</code>（バンク: <code class="text-[11px] bg-slate-100 px-1 rounded">docs/avatars/</code>）</p>
+      </div>
+      <div class="text-sm md:text-base">
+        <div class="iyt-chat-row iyt-chat-row--hiro">
+          <div class="iyt-avatar iyt-avatar--hiro">
+            <img src="assets/characters/hiroko-confused.png" width="72" height="72" alt="ヒロ子（混乱・日銀と国債と株が一塊に見える）" loading="lazy" decoding="async">
+          </div>
+          <div class="iyt-bubble iyt-bubble--hiro">
+            <p class="text-slate-800 leading-relaxed m-0">
+              <span class="font-bold text-pink-700">ヒロ子:</span>
+              <a class="text-blue-700 underline" href="https://www.youtube.com/watch?v=5S80n10Z4OI">田端さんの回</a>で日銀の据置きムード聞いてたのに、
+              <a class="text-blue-700 underline" href="https://www.youtube.com/watch?v=qf7uzyFrKS4">のぶちゃん塾</a>だとチャートのゾーンの話で頭が別チャンネルになるんだけど？同じ「日銀」じゃないの？
+            </p>
+          </div>
+        </div>
+        <div class="iyt-chat-row iyt-chat-row--master">
+          <div class="iyt-avatar iyt-avatar--master">
+            <img src="assets/characters/ichisan-serious.png" width="72" height="72" alt="イチさん（真剣・三本柱の切り分け）" loading="lazy" decoding="async">
+          </div>
+          <div class="iyt-bubble iyt-bubble--master">
+            <p class="text-slate-800 leading-relaxed m-0">
+              <span class="font-bold" style="color:#1e3a5f;">イチさん:</span>
+              ワシらが見るべきは見出しの単語じゃなく<strong>配線図</strong>じゃ。短期金利・国債オペ・株はニュース上は並走するが、動画は<strong>どれか一本を拡大</strong>しがち。上の図解で箱を決めてから表を読めば迷子になりにくい。
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-card" id="iyt-my-strategy" aria-label="自分の出口戦略メモ（保存されません）">
+      <h2 class="text-lg font-bold text-slate-800">My Strategy</h2>
+      <p class="text-sm text-slate-600 mt-2">この欄に入力した内容はブラウザに保存されません（ローカルメモ用）。</p>
+      <ul class="mt-2 text-sm text-slate-600 list-disc list-inside mb-3">
+        <li>利確条件</li>
+        <li>損切り条件</li>
+        <li>様子見条件</li>
+      </ul>
+      <label for="iyt-ms-note" class="sr-only">メモ</label>
+      <textarea id="iyt-ms-note" rows="3" class="w-full border border-slate-300 rounded-lg p-2 text-sm" placeholder="自分だけのメモ（保存されません）"></textarea>
+    </section>
+
+    <section class="section-card text-sm text-slate-700">
+      <p>本ページは<strong>情報の構造化・学習・整理</strong>を目的としており、特定の金融商品の売買を勧誘するものではない。<strong>投資助言ではない</strong>。最終判断は<strong>自己責任</strong>でお願いします。</p>
+      <p class="mt-2">YouTube 発言の要約・引用は<strong>解釈を含む</strong>場合がある。元動画を確認してください。<strong>自動字幕</strong>に基づく要約には<strong>誤認識</strong>があり得る。</p>
+      <p class="mt-2">個別株・銘柄名が出る場合は<strong>誰かの発言の引用・例示</strong>であり、ランキングや推奨株ではない。</p>
+      <p class="mt-2 text-xs text-slate-500">本稿は5チャンネル（@tabbata, @nobujuku, @buffett_taro, @DanTakahashi1, @invest_study）を採用。ほかの固定リストchは窓・テーマの都合で省略。</p>
+    </section>
+
+    <footer class="section-card text-xs text-slate-600">
+      <p class="font-semibold text-slate-800 mb-2">参照チャンネル（公式）</p>
+      <ul class="list-disc list-inside space-y-1">
+        <li><a class="text-blue-700 underline" href="https://www.youtube.com/@tabbata">@tabbata</a></li>
+        <li><a class="text-blue-700 underline" href="https://www.youtube.com/@nobujuku">@nobujuku</a></li>
+        <li><a class="text-blue-700 underline" href="https://www.youtube.com/@buffett_taro">@buffett_taro</a></li>
+        <li><a class="text-blue-700 underline" href="https://www.youtube.com/@DanTakahashi1">@DanTakahashi1</a></li>
+        <li><a class="text-blue-700 underline" href="https://www.youtube.com/@invest_study">@invest_study</a></li>
+      </ul>
+    </footer>
+  </main>
+  <script>lucide.createIcons();</script>
+</body>
+</html>

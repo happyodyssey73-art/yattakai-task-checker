@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="t">
+  <title id="t">§ЅUУcыiоWТ]НHЛђ	</title>
+  <defs>
+    <linearGradient id="bg2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#eff6ff"/>
+      <stop offset="100%" style="stop-color:#dbeafe"/>
+    </linearGradient>
+  </defs>
+  <circle cx="64" cy="64" r="62" fill="url(#bg2)" stroke="#1e3a5f" stroke-width="3"/>
+  <!-- ч -->
+  <circle cx="64" cy="22" r="14" fill="#1e293b"/>
+  <rect x="58" y="22" width="12" height="20" fill="#1e293b"/>
+  <!-- T -->
+  <ellipse cx="64" cy="62" rx="36" ry="38" fill="#fcd9a8"/>
+  <!-- <б -->
+  <g fill="none" stroke="#0f172a" stroke-width="2.5">
+    <rect x="36" y="50" width="22" height="16" rx="3"/>
+    <rect x="70" y="50" width="22" height="16" rx="3"/>
+    <line x1="58" y1="58" x2="70" y2="58"/>
+  </g>
+  <!-- омуЇЕ	 -->
+  <circle cx="47" cy="58" r="3" fill="#0f172a"/>
+  <circle cx="81" cy="58" r="3" fill="#0f172a"/>
+  <!-- гrR -->
+  <path d="M48 82 Q64 88 80 82" fill="none" stroke="#334155" stroke-width="2" stroke-linecap="round"/>
+  <!-- г -->
+  <line x1="56" y1="94" x2="72" y2="94" stroke="#7c2d12" stroke-width="2.5" stroke-linecap="round"/>
+</svg>
