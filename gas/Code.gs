@@ -1594,7 +1594,7 @@ function buildTaskLabelMap_(tasksSheet) {
  * マスタシートの初期化・補完。GAS エディタから 1 回だけ手動実行する。
  *
  * 1. Categories シートを作成・upsert（task_id の color が正しく設定されていないとドーナツが全グレーになる）
- * 2. Tasks シートに全 8 タスクを upsert（既存行は上書き、新規行は追加）
+ * 2. Tasks シートに seed/tasks.csv 由来の全タスクを upsert（既存行は上書き、新規行は追加）
  * 3. 当日分の Daily 行を補完（Tasks にあって Daily にない task_id を追加）
  *
  * 冪等なので何度実行しても安全。既存のユーザーデータ（status 列）は書き換えない。
@@ -1614,16 +1614,11 @@ function setupMasterSheets() {
 
 /**
  * Categories シートを作成・upsert する。
- * seed/tasks.csv のカテゴリ（health / study / money_work）をドーナツの色と合わせて設定。
+ * マスタ行は seed/categories.csv から生成した CATEGORIES_MASTER_（npm run sync:seed-gas）。
  * @private
  */
 function setupCategories_(ss) {
-  var CATS = [
-    ['category_id', 'display_name', 'color',    'sort_order', 'active'],
-    ['health',      '健康・運動',    '#3B82F6',  1,            true],
-    ['study',       '学習',          '#22C55E',  2,            true],
-    ['money_work',  'お金・仕事',    '#F59E0B',  3,            true],
-  ];
+  var CATS = CATEGORIES_MASTER_;
 
   var sheet = ss.getSheetByName('Categories');
   if (!sheet) {
@@ -1683,23 +1678,14 @@ function setupCategories_(ss) {
 }
 
 /**
- * Tasks シートに全 8 タスクを upsert する。
+ * Tasks シートにマスタ定義の全タスクを upsert する。
+ * マスタ行は seed/tasks.csv から生成した TASKS_MASTER_（npm run sync:seed-gas）。
  * task_id が既存なら title / display_short / category_id / active / sort_order を更新。
  * task_id が未存在なら末尾に追加。
  * @private
  */
 function setupTasks_(ss) {
-  var TASKS = [
-    ['task_id', 'title',                           'display_short', 'category_id', 'active', 'sort_order'],
-    ['t_001',   '筋トレ20分',                       '筋トレ',        'health',      true,     10],
-    ['t_005',   '残像トレーニング',                  '残像',          'health',      true,     20],
-    ['t_008',   'コンビニによらない',                'コンビニ×',     'health',      true,     30],
-    ['t_002',   'AIスクールの勉強30分',              'AIスクール',    'study',       true,     40],
-    ['t_006',   'タイピング練習',                    'タイピング',    'study',       true,     50],
-    ['t_004',   'スマートノート・WOOP・0秒思考',     'ノート',        'study',       true,     60],
-    ['t_003',   '株のチェック（セクター・国の強さ）', '株チェック',   'money_work',  true,     70],
-    ['t_007',   'ニュースのチェック',                'ニュース',      'money_work',  true,     80],
-  ];
+  var TASKS = TASKS_MASTER_;
 
   var sheet = ss.getSheetByName('Tasks');
   if (!sheet) {

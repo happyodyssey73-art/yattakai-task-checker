@@ -9,6 +9,7 @@
   },
   "scripts": {
     "start": "node src/cli.mjs",
-    "check": "node src/cli.mjs check"
+    "check": "node src/cli.mjs check",
+    "sync:seed-gas": "node scripts/sync-seed-to-gas.mjs"
   }
 }

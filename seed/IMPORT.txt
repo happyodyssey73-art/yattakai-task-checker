@@ -1,4 +1,5 @@
 Google スプレッドシートへの取り込み（要約）
+0. リポジトリで Categories / Tasks の CSV を編集したあと、GAS に反映する場合は `npm run sync:seed-gas` を実行し（gas/SeedMaster.generated.gs を再生成）、clasp でプッシュしてからスプレッドシートで setupMasterSheets を実行する。CSV インポートのみの運用なら本手順は省略可。
 1. ファイル → インポート → 各 CSV を「新しいシートを挿入」で取り込む。
 2. 取り込んだタブの名前を、Categories / Tasks / Daily / Quotes にそれぞれ変更する。
 3. daily.csv の date 列は、運用開始日に合わせて全行を置き換えてよい（task_id は tasks と一致させる）。
