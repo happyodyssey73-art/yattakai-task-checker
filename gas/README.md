@@ -75,6 +75,7 @@
 ## 実装メモ
 
 - `sendDailyReminder` 先頭で `ensureDailyRowsForToday_` を実行（当日の `Daily` 行を `Tasks` active と突き合わせて不足分を追記）
+- **日次 LIFF（§5.1.1 締め作業モード）**: タスク最上 → 結果（ドーナツ・mood）→ カテゴリ → ■2。エラーは `dashboardClientErrorMessage_` でユーザー向け文言に統一
 - ■2: `pickQuoteBundleForDate_` で `Quotes` から日付ハッシュで 1 件選び、`meaning` 列を **正本**として `dto.quote_meaning` に載せる（LIFF で意味全文を表示。LINE 本文はセリフ中心で長文化しない）
 - Gemini（§6.1）: `GEMINI_API_KEY` 設定時は `callGeminiSection2_` が生成。シートの `meaning` をプロンプトに渡し、内容と矛盾しないセリフに制約。未設定時は Quotes＋テンプレ（§6.2）
 

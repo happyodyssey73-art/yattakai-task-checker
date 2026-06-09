@@ -50,7 +50,25 @@ var LIFF_OPAQUE_EXP_MS_ = 90 * 86400000;
  * デプロイ確認用の識別子（Web アプリが最新デプロイかを判定するための「印」）。
  * 変更したら「新バージョン」で再デプロイし、この値で疎通確認する。
  */
-var DEPLOY_MARKER_ = '2026-05-13-donut-arc-fix';
+var DEPLOY_MARKER_ = '2026-06-09-daily-liff-closing-work';
+
+/** 日次 LIFF クライアント向けエラーコード → ユーザー文言（§1.3.1・§5.6） */
+var DASHBOARD_CLIENT_ERRORS_ = {
+  invalid_date: '日付が正しくありません。LINE のリンクから開き直してください。',
+  token_not_issued: 'この日のページはまだ準備できていません。当日の LINE 通知のあとに開いてください。',
+  token_missing: 'リンクが不完全です。LINE の「ダッシュボード」から開き直してください。',
+  invalid_token: 'リンクが無効です。当日の LINE から開き直してください。',
+  no_spreadsheet: 'データに接続できませんでした。しばらくしてからもう一度お試しください。',
+  build_failed: '表示の準備に失敗しました。しばらくしてからもう一度お試しください。',
+  no_daily_rows: 'この日の記録がまだありません。',
+  LOCK_TIMEOUT: '更新が混み合っています。少し待ってからもう一度お試しください。',
+  TASK_NOT_FOUND: 'タスクが見つかりませんでした。ページを開き直してください。',
+  INVALID_STATUS: '記録できませんでした。ページを開き直してください。',
+  INVALID_DATE: '日付が正しくありません。LINE のリンクから開き直してください。',
+  INVALID_TASK_ID: 'タスクが正しく指定されていません。',
+  NO_DAILY_SHEET: 'データに接続できませんでした。しばらくしてからもう一度お試しください。',
+  MISSING_COLUMNS: 'データの形式に問題があります。管理者に連絡してください。',
+};
 
 /** CacheService キー接頭辞と TTL（30 分）*/
 var CACHE_KEY_PREFIX_ = 'yattakai_dash_v1_';
@@ -144,31 +162,33 @@ function assertDashboardToken_(dateStr, tokenParam) {
   return { ok: true };
 }
 
+/**
+ * 日次 LIFF / RPC のエラーコードをユーザー向け短文に変換（§1.3.1・§5.6）。
+ * @param {string} code
+ * @returns {string}
+ */
+function dashboardClientErrorMessage_(code) {
+  var k = code != null ? String(code).trim() : '';
+  if (k && DASHBOARD_CLIENT_ERRORS_[k]) return DASHBOARD_CLIENT_ERRORS_[k];
+  return '表示できませんでした。しばらくしてからもう一度お試しください。';
+}
+
 function tokenErrorHtmlHint_(err) {
-  if (err === 'token_not_issued') {
-    return 'この日のダッシュ用リンクはまだ発行されていません。当日の LINE 通知のあとに開くか、sendDailyReminder を実行してください。';
-  }
-  if (err === 'token_missing') {
-    return 'リンクに token がありません。LINE の「ダッシュボード」から開き直してください。';
-  }
-  if (err === 'invalid_token') {
-    return 'リンクが無効です。当日の LINE メッセージのダッシュボードから開いてください。';
-  }
-  return 'アクセスを確認できませんでした。';
+  return dashboardClientErrorMessage_(err);
 }
 
 /** 週次 LIFF / doGetWeekly_ 用（日次の tokenErrorHtmlHint_ とは文言を分離） */
 function weeklyTokenErrorHtmlHint_(err) {
   if (err === 'token_not_issued') {
-    return '週次の振り返り用トークンがまだありません。週次の LINE を送ったあとに開くか、GAS で sendWeeklyReview を実行してください。';
+    return '週次の振り返りページはまだ準備できていません。週次の LINE 通知のあとに開いてください。';
   }
   if (err === 'token_missing') {
-    return 'リンクに token がありません。最新の週次 LINE の「振り返り」から開き直してください。';
+    return 'リンクが不完全です。最新の週次 LINE の「振り返り」から開き直してください。';
   }
   if (err === 'invalid_token') {
-    return '週次のリンクが無効または期限切れです。最新の週次 LINE の「振り返り」から開いてください。';
+    return '週次のリンクが無効です。最新の週次 LINE の「振り返り」から開き直してください。';
   }
-  return '週次ページへのアクセスを確認できませんでした。';
+  return '週次ページを表示できませんでした。しばらくしてからもう一度お試しください。';
 }
 
 /**
@@ -943,12 +963,12 @@ function isWeeklyLiffIntent_(q) {
 function weeklyLiffParamsMissingHtml_() {
   var body =
     '<p style="margin:16px;font-size:15px;line-height:1.7;color:#1E293B;">' +
-    '週次ページ用の情報が足りません（<code>weekStart</code> がありません）。' +
+    '週次の振り返りページを開けませんでした。' +
     '</p>' +
     '<p style="margin:16px;font-size:14px;line-height:1.7;color:#475569;">' +
-    '<strong>対処:</strong> 最新の週次 LINE（<span style="white-space:nowrap;">【やったかい週次】</span>）の' +
+    '最新の週次 LINE（<span style="white-space:nowrap;">【やったかい週次】</span>）の' +
     '<strong>「振り返り」</strong>リンクから開き直してください。' +
-    ' LIFF のエンドポイント URL だけをブックマークしていると表示できません。' +
+    'アプリの URL だけをブックマークしていると表示できません。' +
     '</p>';
   return (
     '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
@@ -1077,13 +1097,7 @@ function doGet(e) {
     if (format === 'json') {
       return jsonOutput_({ ok: false, error: 'no_spreadsheet', message: String(err.message || err) });
     }
-    return htmlMessage_(
-      'スプレッドシートを取得できません。コンテナバインドでデプロイするか、スプレッドシートから ensureSpreadsheetBinding を 1 回実行してください。',
-      dateStr,
-      format,
-      null,
-      tokenParam
-    );
+    return htmlMessage_(dashboardClientErrorMessage_('no_spreadsheet'), dateStr, format, null, tokenParam);
   }
 
   var todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
@@ -1096,17 +1110,17 @@ function doGet(e) {
     if (format === 'json') {
       return jsonOutput_({ ok: false, error: 'build_failed', message: String(err.message || err) });
     }
-    return htmlMessage_(String(err.message || err), dateStr, format, null, tokenParam);
+    return htmlMessage_(dashboardClientErrorMessage_('build_failed'), dateStr, format, null, tokenParam);
   }
 
   if (format === 'json') {
     return jsonOutput_(pubJson);
   }
 
-  var hint = pubJson.ok
-    ? '上の内容はスプレッドシートと同じ JSON から取得しています。'
-    : '（この日の Daily 行がありません）';
-  return htmlMessage_(hint, dateStr, format, pubJson.ok ? pubJson : null, tokenParam);
+  if (!pubJson.ok) {
+    return htmlMessage_(dashboardClientErrorMessage_(pubJson.error), dateStr, format, null, tokenParam);
+  }
+  return htmlMessage_('', dateStr, format, pubJson, tokenParam);
 }
 
 /** JSON レスポンス（LIFF の fetch 用） */
@@ -1117,8 +1131,15 @@ function jsonOutput_(obj) {
 /** API 向けに整形（LINE 用 section2TextBlock は含めない） */
 function toPublicDashboardJson_(model) {
   if (!model.ok) {
-    return { ok: false, error: model.error || 'unknown', date: model.date };
+    var errCode = model.error || 'unknown';
+    return {
+      ok: false,
+      error: errCode,
+      date: model.date,
+      user_message: dashboardClientErrorMessage_(errCode),
+    };
   }
+  var avatars = pickAvatarsByPercent_(model.achievement_percent);
   return {
     ok: true,
     date: model.date,
@@ -1128,6 +1149,7 @@ function toPublicDashboardJson_(model) {
     tasks: model.tasks,
     categories: model.categories || [],
     section2: model.section2,
+    avatar_images: avatars,
   };
 }
 
@@ -1300,45 +1322,39 @@ function updateTaskStatus(dateStr, clientToken, taskId, newStatus) {
 
 /**
  * HTML 版ダッシュボード（LIFF）。
- * google.script.run で getDashboardJsonForClient を呼び、ドーナツ SVG・カテゴリバー・■2 を描画。
- * 変更後: clasp push → ウェブアプリ「新バージョン」で再デプロイ。
- */
-/**
- * HTML 版ダッシュボード（LIFF）。
- * model が渡されたとき（doGet がキャッシュから取得済みのとき）は JSON を HTML に埋め込み、
- * クライアントは google.script.run を呼ばずに即座に描画する（2往復 → 1往復）。
- * model が null のとき（エラー時）は従来通り google.script.run でフォールバック取得する。
+ * 17:40 締め作業モード（§5.1.1）: タスク → サマリー → カテゴリ → ■2。
+ * model が渡されたときは JSON を HTML に埋め込み、google.script.run を省略する。
  * 変更後: clasp push → ウェブアプリ「新バージョン」で再デプロイ。
  */
 function htmlMessage_(message, dateStr, format, model, tokenStr) {
   var defaultDateJson = JSON.stringify(dateStr);
   var defaultTokenJson = JSON.stringify(String(tokenStr || ''));
   var escapedHint = escapeHtml_(message || '');
-  // AVATAR_BASE_URL: 末尾スラッシュなし。未設定時は '' → 画像なし（テキストのみ）
   var avatarBaseUrl = (PropertiesService.getScriptProperties().getProperty('AVATAR_BASE_URL') || '').replace(/\/$/, '');
-
-  // model（public JSON）が渡されていればクライアントに埋め込む → 2往復目の RPC をゼロにする
-  // model は toPublicDashboardJson_ の結果（ok, date, tasks, categories, section2 等を含む）
   var bakedJson = (model && model.ok) ? jsonLiteralForScriptTag_(model) : 'null';
+  var errMapJson = jsonLiteralForScriptTag_(DASHBOARD_CLIENT_ERRORS_);
 
   var css = [
-    // iOS/Android セーフエリア対応（ノッチ・ホームバー）と和文フォントスタック
     '*{-webkit-tap-highlight-color:transparent;box-sizing:border-box;}',
     'body{font-family:"Noto Sans JP","Hiragino Kaku Gothic ProN",system-ui,sans-serif;',
     'padding:env(safe-area-inset-top,0) 16px calc(40px + env(safe-area-inset-bottom,0));',
     'max-width:480px;margin:0 auto;background:#fafafa;color:#1E293B;}',
     '#st{min-height:1.4em;padding:10px 0 2px;font-size:13px;color:#64748B;}',
-    '.top{text-align:center;padding:16px 0 6px;}',
-    '.dlbl{font-size:12px;color:#94A3B8;margin:0 0 2px;letter-spacing:.04em;}',
-    '.mlbl{font-size:15px;font-weight:700;color:#1E293B;margin:0;}',
+    '.page-hdr{text-align:center;padding:12px 0 4px;}',
+    '.dlbl{font-size:12px;color:#94A3B8;margin:0;letter-spacing:.04em;}',
+    '.hint{font-size:12px;color:#64748B;margin:0 0 12px;line-height:1.55;text-align:center;}',
+    '.summary-sec{background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:4px 12px 12px;margin:16px 0 4px;}',
+    '.summary-sec h2{margin-top:12px;}',
+    '.mlbl{font-size:15px;font-weight:700;color:#1E293B;margin:0;text-align:center;}',
     '@keyframes donutIn{from{opacity:0;transform:scale(0.96);}to{opacity:1;transform:scale(1);}}',
     '.donut-wrap{display:flex;justify-content:center;padding:8px 0 4px;animation:donutIn .18s ease-out;}',
     '.donut-svg{width:160px;height:160px;}',
     '.dpct{font-size:30px;font-weight:900;fill:#1E293B;dominant-baseline:middle;text-anchor:middle;}',
-    '.clbl{text-align:center;font-size:12px;color:#64748B;margin:2px 0 16px;}',
-    // h2 の最小サイズを 11px→12px（物理サイズ約4mm確保）
+    '.clbl{text-align:center;font-size:12px;color:#64748B;margin:4px 0 0;}',
     'h2{font-size:12px;font-weight:700;color:#64748B;text-transform:uppercase;letter-spacing:.06em;margin:18px 0 8px;border-bottom:1px solid #E2E8F0;padding-bottom:4px;}',
-    '.catsec,.tasksec{margin-bottom:4px;}',
+    '.tasksec{margin-bottom:8px;}',
+    '.tasksec h2{margin-top:0;}',
+    '.catsec{margin-bottom:4px;}',
     '.crow{margin-bottom:12px;}',
     '.cnr{display:flex;align-items:center;gap:8px;font-size:13px;margin-bottom:5px;}',
     '.cdot{width:10px;height:10px;border-radius:50%;flex-shrink:0;display:inline-block;}',
@@ -1385,7 +1401,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
   var js = [
     '(function(){',
     'var D=' + defaultDateJson + ',T=' + defaultTokenJson + ',AV=' + jsonLiteralForScriptTag_(avatarBaseUrl) + ',NS="http://www.w3.org/2000/svg";',
-    // サーバーが埋め込んだ初期データ。非 null のときは google.script.run を呼ばず即描画する
+    'var ERR_MAP=' + errMapJson + ',',
     'var __D__=' + bakedJson + ';',
     'var root=document.getElementById("app"),stEl=document.getElementById("st");',
     'var qs=new URLSearchParams(window.location.search);',
@@ -1394,7 +1410,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     'function h(tag,text,cls){var e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;}',
     'function svgE(tag){return document.createElementNS(NS,tag);}',
     'function sa(el,k,v){el.setAttribute(k,v);}',
-    // Color sanitizer
+    'function clientErr(code){if(code&&ERR_MAP&&ERR_MAP[code])return ERR_MAP[code];return "表示できませんでした。しばらくしてからもう一度お試しください。";}',
     'function sc(c){var s=String(c||"#94A3B8").trim();return/^(#[0-9a-fA-F]{3,8}|rgb[a]?\\([^)]*\\)|[a-zA-Z]{2,30})$/.test(s)?s:"#94A3B8";}',
     // Donut SVG builder — §3.5: segment = category task-count share
     // 実装方針:
@@ -1447,8 +1463,37 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '    row.appendChild(bar);}',
     '  return row;',
     '}',
-    // showToast
     'function showToast(msg){var t=document.getElementById("toast");if(!t)return;t.textContent=msg;t.className="toast show";setTimeout(function(){t.className="toast";},2500);}',
+    'function avatarSrc(imgFile){return AV&&imgFile?AV+"/"+imgFile:"";}',
+    'function mkChar(name,text,imgFile,isRight,imgId){',
+    '  var row=document.createElement("div");row.className="ch"+(isRight?" r":"");',
+    '  var avEl=document.createElement("div");avEl.className="av";',
+    '  var fbColor=isRight?"#F59E0B":"#475569";',
+    '  var src=avatarSrc(imgFile);',
+    '  if(src){',
+    '    var img=document.createElement("img");img.id=imgId||"";',
+    '    img.style.cssText="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;";',
+    '    img.src=src;img.alt=name;',
+    '    img.onerror=function(){this.style.display="none";var fb=document.createElement("div");',
+    '      fb.style.cssText="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:#fff;background:"+fbColor+";border-radius:50%;";',
+    '      fb.textContent=name.charAt(0);avEl.appendChild(fb);};',
+    '    avEl.appendChild(img);',
+    '  }else{',
+    '    var fb2=document.createElement("div");',
+    '    fb2.style.cssText="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:#fff;background:"+fbColor+";border-radius:50%;";',
+    '    fb2.textContent=name.charAt(0);avEl.appendChild(fb2);',
+    '  }',
+    '  row.appendChild(avEl);',
+    '  var bub=document.createElement("div");bub.className="bubble";',
+    '  var cn=document.createElement("p");cn.className="cn";cn.textContent=name;',
+    '  var tx=document.createElement("p");tx.style.margin="0";tx.textContent=text;',
+    '  bub.appendChild(cn);bub.appendChild(tx);row.appendChild(bub);return row;',
+    '}',
+    'function updateAvatars(imgs){',
+    '  if(!imgs)return;var i1=document.getElementById("av-ichisan"),i2=document.getElementById("av-hiroko");',
+    '  if(i1&&imgs.ichisan_image&&AV)i1.src=AV+"/"+imgs.ichisan_image;',
+    '  if(i2&&imgs.hiroko_image&&AV)i2.src=AV+"/"+imgs.hiroko_image;',
+    '}',
     // applyTaskStyle: li のクラスとボタンのアクティブ状態を同期
     // isExpl=true のとき: done→緑 / not_done→赤。false（未記録）のとき: ニュートラルグレー
     'function applyTaskStyle(li,st,isExpl){',
@@ -1492,8 +1537,8 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '  google.script.run',
     '    .withSuccessHandler(function(res){',
     '      for(var i=0;i<btns.length;i++)btns[i].disabled=false;',
-    '      if(!res||!res.ok){li.dataset.status=prevStatus;li.dataset.explicit=prevExpl?"1":"0";applyTaskStyle(li,prevStatus,prevExpl);showToast("更新に失敗しました");return;}',
-    '      updateSummary(res);',
+    '      if(!res||!res.ok){li.dataset.status=prevStatus;li.dataset.explicit=prevExpl?"1":"0";applyTaskStyle(li,prevStatus,prevExpl);showToast(clientErr(res&&res.error)||"更新に失敗しました");return;}',
+    '      updateSummary(res);showToast("記録しました");',
     '    })',
     '    .withFailureHandler(function(){',
     '      for(var i=0;i<btns.length;i++)btns[i].disabled=false;',
@@ -1501,7 +1546,6 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '    })',
     '    .updateTaskStatus(date,token,taskId,newStatus);',
     '}',
-    // updateSummary: タスクトグル後にドーナツ・達成率・カテゴリを差分更新
     'function updateSummary(data){',
     '  var c=data.counts||{};',
     '  var moodEl=document.getElementById("mood-lbl");if(moodEl)moodEl.textContent=data.mood_message||"";',
@@ -1511,72 +1555,43 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '  if(oldD){var newD=mkDonut(data.categories||[],c.total||0,data.achievement_percent);oldD.parentNode.replaceChild(newD,oldD);}',
     '  var catSec=document.getElementById("catsec");',
     '  if(catSec&&data.categories){while(catSec.firstChild)catSec.removeChild(catSec.firstChild);catSec.appendChild(h("h2","カテゴリ別"));for(var ci=0;ci<data.categories.length;ci++)catSec.appendChild(mkCatBar(data.categories[ci]));}',
+    '  var av=data.avatar_images||(data.section2?{ichisan_image:data.section2.ichisan_image,hiroko_image:data.section2.hiroko_image}:null);',
+    '  updateAvatars(av);',
     '}',
-    // Main paint
     'function paint(data){',
-    '  if(!data||data.ok===false){stEl.textContent="エラー: "+(data&&data.error?data.error:"unknown")+(data&&data.date?" ("+data.date+")":"");return;}',
+    '  if(!data||data.ok===false){stEl.textContent=data&&data.user_message?data.user_message:clientErr(data&&data.error);return;}',
     '  stEl.textContent="";while(root.firstChild)root.removeChild(root.firstChild);',
     '  var frag=document.createDocumentFragment();',
-    // Top: date + mood（mood に id を付けて updateSummary から差分更新できるようにする）
-    '  var top=document.createElement("div");top.className="top";',
-    '  top.appendChild(h("p",data.date||"","dlbl"));',
-    '  var moodP=h("p",data.mood_message||"","mlbl");moodP.id="mood-lbl";top.appendChild(moodP);',
-    '  frag.appendChild(top);',
-    // Donut（mkDonut 内で id="donut-wrap" を付与済み）
-    '  var cats=data.categories||[],c=data.counts||{};',
-    '  frag.appendChild(mkDonut(cats,c.total||0,data.achievement_percent));',
-    '  var clblP=h("p","達成 "+(c.done||0)+" / 全体 "+(c.total||0)+"、未 "+(c.not_done||0),"clbl");clblP.id="clbl";frag.appendChild(clblP);',
-    // Category bars（id="catsec" を付与して updateSummary から差分更新）
-    '  if(cats.length>0){var cs=document.createElement("div");cs.className="catsec";cs.id="catsec";cs.appendChild(h("h2","カテゴリ別"));',
-    '    for(var ci=0;ci<cats.length;ci++)cs.appendChild(mkCatBar(cats[ci]));frag.appendChild(cs);}',
-    // Tasks（◯/✕ ボタン付き）
-    '  var ts=document.createElement("div");ts.className="tasksec";ts.appendChild(h("h2","タスク"));',
+    '  var hdr=document.createElement("div");hdr.className="page-hdr";',
+    '  hdr.appendChild(h("p",data.date||"","dlbl"));frag.appendChild(hdr);',
+    '  frag.appendChild(h("p","◯／✕ をタップして、今日の記録を締めましょう","hint"));',
+    '  var ts=document.createElement("div");ts.className="tasksec";ts.id="tasksec";',
+    '  ts.appendChild(h("h2","今日のタスク"));',
     '  var ul=document.createElement("ul"),tasks=data.tasks||[];',
     '  for(var ti=0;ti<tasks.length;ti++)ul.appendChild(mkTaskRow(tasks[ti]));',
     '  ts.appendChild(ul);frag.appendChild(ts);',
-    // Section 2 — avatar image + bubble layout
-    '  var s2=data.section2||{};var sec=document.createElement("div");sec.className="sec2";',
+    '  var cats=data.categories||[],c=data.counts||{};',
+    '  var sum=document.createElement("div");sum.className="summary-sec";sum.id="summary-sec";',
+    '  sum.appendChild(h("h2","今日の結果"));',
+    '  sum.appendChild(mkDonut(cats,c.total||0,data.achievement_percent));',
+    '  var moodP=h("p",data.mood_message||"","mlbl");moodP.id="mood-lbl";sum.appendChild(moodP);',
+    '  var clblP=h("p","達成 "+(c.done||0)+" / 全体 "+(c.total||0)+"、未 "+(c.not_done||0),"clbl");clblP.id="clbl";sum.appendChild(clblP);',
+    '  frag.appendChild(sum);',
+    '  if(cats.length>0){var cs=document.createElement("div");cs.className="catsec";cs.id="catsec";cs.appendChild(h("h2","カテゴリ別"));',
+    '    for(var ci=0;ci<cats.length;ci++)cs.appendChild(mkCatBar(cats[ci]));frag.appendChild(cs);}',
+    '  var s2=data.section2||{},av=data.avatar_images||{ichisan_image:s2.ichisan_image,hiroko_image:s2.hiroko_image};',
+    '  var sec=document.createElement("div");sec.className="sec2";',
     '  sec.appendChild(h("h2","今日の一言"));',
     '  sec.appendChild(h("p","「"+(s2.quote||"")+"」","qt"));',
     '  if(s2.quote_attribution)sec.appendChild(h("p",s2.quote_attribution,"qa"));',
     '  var qm0=(s2.quote_meaning||"").trim();',
     '  if(qm0){sec.appendChild(h("p","意味","qm-h"));sec.appendChild(h("p",qm0,"qm"));}',
-    // mkChar: name, text, imgFile, isRight
-    '  function mkChar(name,text,imgFile,isRight){',
-    '    var row=document.createElement("div");row.className="ch"+(isRight?" r":"");',
-    '    var avEl=document.createElement("div");avEl.className="av";',
-    // アバター画像が取得できない場合、名前の頭文字入りカラー円でフォールバック
-    '    var fbColor=isRight?"#F59E0B":"#475569";',
-    '    if(AV&&imgFile){',
-    '      var img=document.createElement("img");',
-    '      img.style.cssText="width:100%;height:100%;border-radius:50%;object-fit:cover;display:block;";',
-    '      img.src=AV+"/"+imgFile;img.alt=name;',
-    '      img.onerror=function(){',
-    '        this.style.display="none";',
-    '        var fb=document.createElement("div");',
-    '        fb.style.cssText="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:#fff;background:"+fbColor+";border-radius:50%;";',
-    '        fb.textContent=name.charAt(0);',
-    '        avEl.appendChild(fb);',
-    '      };',
-    '      avEl.appendChild(img);',
-    '    }else{',
-    '      var fb2=document.createElement("div");',
-    '      fb2.style.cssText="width:100%;height:100%;display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:900;color:#fff;background:"+fbColor+";border-radius:50%;";',
-    '      fb2.textContent=name.charAt(0);avEl.appendChild(fb2);',
-    '    }',
-    '    row.appendChild(avEl);',
-    '    var bub=document.createElement("div");bub.className="bubble";',
-    '    var cn=document.createElement("p");cn.className="cn";cn.textContent=name;',
-    '    var tx=document.createElement("p");tx.style.margin="0";tx.textContent=text;',
-    '    bub.appendChild(cn);bub.appendChild(tx);row.appendChild(bub);return row;',
-    '  }',
-    '  sec.appendChild(mkChar("イチさん",s2.ichisan||"",s2.ichisan_image||"",false));',
-    '  sec.appendChild(mkChar("ヒロ子",s2.hiroko||"",s2.hiroko_image||"",true));',
+    '  sec.appendChild(mkChar("イチさん",s2.ichisan||"",av.ichisan_image||"",false,"av-ichisan"));',
+    '  sec.appendChild(mkChar("ヒロ子",s2.hiroko||"",av.hiroko_image||"",true,"av-hiroko"));',
     '  frag.appendChild(sec);root.appendChild(frag);',
     '}',
-    // 埋め込みデータがあれば即描画（キャッシュ or doGet ビルド済み）、なければ RPC でフォールバック
     'if(__D__&&__D__.ok===true){stEl.textContent="";paint(__D__);}',
-    'else{google.script.run.withSuccessHandler(paint).withFailureHandler(function(err){stEl.textContent="取得に失敗しました: "+(err&&err.message?err.message:String(err));}).getDashboardJsonForClient(date,token);}',
+    'else{google.script.run.withSuccessHandler(paint).withFailureHandler(function(){stEl.textContent="通信できませんでした。しばらくしてからもう一度お試しください。";}).getDashboardJsonForClient(date,token);}',
     '})();',
   ].join('\n');
 
@@ -2843,7 +2858,9 @@ function doGetWeekly_(weekStart, tokenParam, format) {
       return jsonOutput_({ ok: false, error: 'no_spreadsheet', message: String(err.message || err) });
     }
     return liffHtmlOutput_(
-      '<p>スプレッドシートを取得できません。スプレッドシートから <code>ensureSpreadsheetBinding</code> を 1 回実行してください。</p>'
+      '<p style="margin:16px;font-size:15px;line-height:1.7;color:#1E293B;">' +
+        escapeHtml_(dashboardClientErrorMessage_('no_spreadsheet')) +
+        '</p>'
     );
   }
 
@@ -2909,7 +2926,7 @@ function htmlWeeklyMessage_(weekStartJst, tokenStr, model) {
     'function sc(c){var s=String(c||"#94A3B8").trim();return/^(#[0-9a-fA-F]{3,8}|rgb[a]?\\([^)]*\\)|[a-zA-Z]{2,30})$/.test(s)?s:"#94A3B8";}',
     'function fmt(d){var p=d.split("-");return parseInt(p[1],10)+"/"+parseInt(p[2],10);}',
     'function paint(data){',
-    '  if(!data||data.ok===false){stEl.textContent="エラー: "+(data&&data.error||"unknown");return;}',
+    '  if(!data||data.ok===false){stEl.textContent=data&&data.user_message?data.user_message:"表示できませんでした。";return;}',
     '  stEl.textContent="";while(root.firstChild)root.removeChild(root.firstChild);',
     '  var frag=document.createDocumentFragment();',
     // ヘッダ: 期間・週次達成率・メッセージ
