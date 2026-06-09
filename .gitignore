@@ -1,8 +1,11 @@
 node_modules/
 
+# Cursor ローカル設定（スキル等）
+.cursor/
+
 # clasp: scriptId をリモートに載せない（各 PC の gas/.clasp.json はローカルのみ）
 gas/.clasp.json
 
-# invest-youtube-matome: Phase0 生成物（APIキーを含まないが、作業中ファイルの誤コミット防止）
+# 作業中の一時ファイル
 tmp/
 **/phase0*.json

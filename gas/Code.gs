@@ -3,8 +3,6 @@
  *
  * スクリプト プロパティ:
  *   LINE_CHANNEL_ACCESS_TOKEN, LINE_USER_ID（必須）
- *   INVEST24H_MAIL_TRIGGER_SECRET（任意）… 設定時のみ、ウェブアプリ GET
- *     ?invest24hMail=1&secret=… で sendInvest24hDigestEmail を実行可（MailApp）。未設定時はこの経路は 403 相当
  *   GEMINI_API_KEY（任意）… 設定時に §6.1 Gemini で ■2 を生成。未設定時は §6.2 テンプレのみ
  *   AVATAR_BASE_URL（任意）… キャラ画像を配信する URL（末尾スラッシュなし）。例: https://yattakai-avatars.surge.sh
  *                             未設定時は LIFF でテキストのみ表示（フォールバック）
@@ -964,30 +962,9 @@ function weeklyLiffParamsMissingHtml_() {
 /**
  * ウェブアプリ（LIFF エンドポイント）。
  * format=json … ダッシュボード DTO（?token= は sendDailyReminder 発行分と照合）
- *
- * 投資図解メール（任意）: スクリプトプロパティ INVEST24H_MAIL_TRIGGER_SECRET が設定されているときだけ、
- * GET ?invest24hMail=1&secret=（同値）で sendInvest24hDigestEmail を実行する。JSON のみ返す。
  */
 function doGet(e) {
   e = e || { parameter: {} };
-  var p0 = e.parameter || {};
-  if (String(p0.invest24hMail || '').trim() === '1') {
-    var props0 = PropertiesService.getScriptProperties();
-    var expected0 = (props0.getProperty('INVEST24H_MAIL_TRIGGER_SECRET') || '').trim();
-    var got0 = String(p0.secret != null ? p0.secret : '').trim();
-    if (!expected0) {
-      return jsonOutput_({ ok: false, error: 'mail_trigger_secret_not_configured' });
-    }
-    if (got0 !== expected0) {
-      return jsonOutput_({ ok: false, error: 'forbidden' });
-    }
-    try {
-      sendInvest24hDigestEmail();
-      return jsonOutput_({ ok: true, mailed: true });
-    } catch (mailErr) {
-      return jsonOutput_({ ok: false, error: 'mail_failed', message: String(mailErr.message || mailErr) });
-    }
-  }
 
   var q = parseWebAppQuery_(e);
   var tz = TZ_;
@@ -3003,40 +2980,6 @@ function htmlWeeklyMessage_(weekStartJst, tokenStr, model) {
   return liffHtmlOutput_(html);
 }
 
-/**
- * 投資図解「24時間」ページの URL をメールで送る（エディタから手動実行）。
- * スクリプトプロパティ:
- *   INVEST24H_PAGE_URL（任意）… 未設定時は https://invest-24h-20260422.surge.sh/
- *   INVEST24H_NOTIFY_TO（任意）… カンマ区切りの送信先。未設定時は Session.getActiveUser().getEmail()
- * Gmail の送信制限・スパム判定は Google 側のポリシーに従う。
- */
-function sendInvest24hDigestEmail() {
-  var props = PropertiesService.getScriptProperties();
-  var url = (props.getProperty('INVEST24H_PAGE_URL') || 'https://invest-24h-20260422.surge.sh/').trim();
-  var toRaw = (props.getProperty('INVEST24H_NOTIFY_TO') || '').trim();
-  var recipients = [];
-  if (toRaw) {
-    var parts = toRaw.split(',');
-    for (var i = 0; i < parts.length; i++) {
-      var e = String(parts[i] || '').trim();
-      if (e) recipients.push(e);
-    }
-  }
-  if (recipients.length === 0) {
-    var self = Session.getActiveUser().getEmail();
-    if (!self) throw new Error('送信先メールが取得できません。INVEST24H_NOTIFY_TO を設定するか、ログインしたユーザーで実行してください。');
-    recipients.push(self);
-  }
-  var subject = '【投資図解】24時間まとめ ' + Utilities.formatDate(new Date(), TZ_, 'yyyy-MM-dd');
-  var body =
-    '投資図解（直近24時間まとめ）を更新しました。\n\n' +
-    url +
-    '\n\n---\nやったかい GAS（sendInvest24hDigestEmail）から送信';
-  for (var j = 0; j < recipients.length; j++) {
-    MailApp.sendEmail({ to: recipients[j], subject: subject, body: body });
-    Logger.log('[sendInvest24hDigestEmail] sent to ' + recipients[j]);
-  }
-}
 
 function linePushText_(token, userId, text) {
   var url = 'https://api.line.me/v2/bot/message/push';
@@ -3170,3 +3113,4 @@ function ensureDailyRowsForToday_(ss, todayStr, tz) {
   if (last < 1) last = 1;
   dailySheet.getRange(last + 1, 1, toAppend.length, dh.length).setValues(toAppend);
 }
+

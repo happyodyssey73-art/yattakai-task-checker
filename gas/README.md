@@ -22,11 +22,6 @@
 | `BOUND_SPREADSHEET_ID` | 任意（推奨） | スプレッドシート ID。ウェブアプリ / `google.script.run` で `getActiveSpreadsheet` が取れないときに `openById` する。**スプレッドシートからスクリプトを開き `ensureSpreadsheetBinding` を 1 回実行**すると自動で書き込まれる（手入力でも可） |
 | `SKIP_DASH_TOKEN_CHECK` | 任意 | `true` のとき token 検証をスキップ（**開発用のみ・本番は設定しない**） |
 | `ALLOW_WEEKLY_TEST_RESEND` | 任意（**テスト専用**） | `true` のときだけ GAS エディタから **`resendWeeklyReviewAfterClearingSentWeek`** を実行可能。当週の `sent_week:{月曜}` を削除してから `sendWeeklyReview` を再送する。**テスト後は必ずプロパティを削除**すること |
-| `INVEST24H_PAGE_URL` | 任意 | `sendInvest24hDigestEmail` が本文に載せる投資図解 URL。未設定時は `https://invest-24h-20260422.surge.sh/` |
-| `INVEST24H_NOTIFY_TO` | 任意 | 上記メールの宛先（カンマ区切り）。未設定時は実行ユーザー本人の Gmail |
-| `INVEST24H_MAIL_TRIGGER_SECRET` | 任意 | 長いランダム文字列。**ウェブアプリ**の URL に `?invest24hMail=1&secret=（同じ値）` を付けて GET すると `sendInvest24hDigestEmail` が走る（`MailApp`）。未設定時はこの GET は `mail_trigger_secret_not_configured` を返す |
-
-手動で図解 URL をメールしたいときは、GAS エディタで **`sendInvest24hDigestEmail`** を実行する（`MailApp`）。または上記シークレットを設定したうえで、デプロイ済みウェブアプリ URL にクエリを付けて GET する。
 
 ## 時間トリガ（本番）
 

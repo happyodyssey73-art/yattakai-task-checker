@@ -1,9 +1,10 @@
-# キャラクター PNG（リポジトリ共通バンク）
+# キャラクター PNG（LIFF 用）
 
 ## 役割
 
-**diagram-invest** と **invest-youtube-matome** で共通の **ヒロ子／イチさん（チャートマスター）** 表情アセットを置く。  
-各ファイルの**意味・いつ使うか・`alt` の型**の正本は、diagram-invest の `references/character-avatars.md`（グローバル例: `%USERPROFILE%\.cursor\skills\diagram-invest\references\character-avatars.md`）。
+**やったかい** の LIFF ダッシュボード（■2 セリフパート）で使う **ヒロ子／イチさん** の表情アセットを置く。
+
+GAS の `AVATAR_BASE_URL` スクリプトプロパティに、このフォルダを配信している URL（例: `https://yattakai-avatars.surge.sh`）を設定すると、LIFF 上でキャラ画像が表示される。未設定時はテキストのみ表示。
 
 ## ファイル一覧
 
@@ -12,17 +13,9 @@
 | `hiroko-*.png` | 10 | 絶望は正本では **`hiroko-zetsubou.png`**（ヘボン式）。本リポは歴史的に **`hiroko-zetubou.png`** も併存し得る → HTML の `src` は**実在ファイル名**に合わせる。 |
 | `ichisan-*.png` | 6 | イチさん＝チャートマスターと同一人物。 |
 
-## invest-youtube-matome へ載せる手順
+## 配信手順
 
-Surge は**フォルダ単位**のため、`docs/invest-youtube-matome-{日付}/assets/characters/` に**デプロイに必要な PNG をコピー**してから `surge .` する（[character-avatars-compact.md](../../.cursor/skills/invest-youtube-matome/references/character-avatars-compact.md)）。
-
-PowerShell の例:
-
-```powershell
-$av = "docs/avatars"
-$to = "docs/invest-youtube-matome-20260425/assets/characters"
-Copy-Item "$av/hiroko-confused.png","$av/ichisan-serious.png" $to -Force
-```
+Surge 等で `docs/avatars/` を静的ホストし、得られた URL を GAS の `AVATAR_BASE_URL` に設定する。詳細は [`gas/README.md`](../../gas/README.md) を参照。
 
 ## ライセンス・取り扱い
 
