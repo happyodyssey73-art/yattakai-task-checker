@@ -365,8 +365,9 @@ function sendMorningMessageImpl_(todayStr) {
 
   var ss = getBoundSpreadsheet_();
 
-  // (1) 当日 Daily 行を補完（ensureDailyRowsForToday_ は冪等なので夕方と競合しない）
+  // (1) Tasks マスタを seed から同期（冪等）→ 当日 Daily 行を補完
   try {
+    setupTasks_(ss);
     ensureDailyRowsForToday_(ss, todayStr, TZ_);
   } catch (e) {
     Logger.log('[sendMorningMessage] ensureDailyRows 失敗（無視）: ' + String(e));
@@ -470,6 +471,12 @@ function sendDailyReminderImpl_(todayStr) {
   var userId = props.getProperty('LINE_USER_ID');
   if (!token || !userId) {
     throw new Error('スクリプト プロパティに LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID を設定してください。');
+  }
+
+  try {
+    setupTasks_(ss);
+  } catch (syncErr) {
+    Logger.log('[sendDailyReminder] setupTasks_ 失敗（無視）: ' + String(syncErr));
   }
 
   var model = buildDailyDashboardModel_(ss, todayStr, TZ_, { ensureTodayRows: true });
@@ -632,7 +639,7 @@ function buildTaskLabelMapFromRows_(rows) {
     }
     var shortv = ixShort >= 0 ? String(row[ixShort] || '').trim() : '';
     var titlev = ixTitle >= 0 ? String(row[ixTitle] || '').trim() : '';
-    map[id] = shortv || titlev || id;
+    map[id] = titlev || shortv || id;
   }
   return map;
 }
@@ -1195,13 +1202,34 @@ function getDashboardJsonForClient(dateStr, clientToken) {
 function getCachedDashboard_(ss, dateStr, tz, opts) {
   opts = opts || {};
   var key = CACHE_KEY_PREFIX_ + dateStr;
+  // タスク追加後も古い件数のキャッシュが返らないよう、当日は先に Daily を補完して件数を照合
+  if (opts.ensureTodayRows) {
+    try {
+      ensureDailyRowsForToday_(ss, dateStr, tz);
+    } catch (ensureErr) {
+      Logger.log('[getCachedDashboard_] ensureDailyRows 失敗（無視）: ' + String(ensureErr));
+    }
+  }
   if (!opts.bypassCache) {
     try {
       var hit = CacheService.getScriptCache().get(key);
       if (hit) {
         var parsed = JSON.parse(hit);
-        Logger.log('[cache HIT] ' + key);
-        return parsed;
+        var stale = false;
+        if (opts.ensureTodayRows && parsed && parsed.ok && parsed.counts) {
+          var activeN = countActiveTasks_(ss);
+          if (parsed.counts.total !== activeN) {
+            stale = true;
+            Logger.log(
+              '[cache STALE] ' + key + ' cached=' + parsed.counts.total + ' active=' + activeN
+            );
+            invalidateDashboardCache_(dateStr);
+          }
+        }
+        if (!stale) {
+          Logger.log('[cache HIT] ' + key);
+          return parsed;
+        }
       }
     } catch (e) {
       Logger.log('[cache] get/parse error（無視）: ' + String(e));
@@ -2114,17 +2142,29 @@ function buildTaskLabelMap_(tasksSheet) {
  *
  * 冪等なので何度実行しても安全。既存のユーザーデータ（status 列）は書き換えない。
  */
+/** 当日の LIFF キャッシュだけ削除（タスク追加後に古い件数が出るとき用） */
+function clearTodayDashboardCache() {
+  var todayStr = Utilities.formatDate(new Date(), TZ_, 'yyyy-MM-dd');
+  invalidateDashboardCache_(todayStr);
+  Logger.log('[clearTodayDashboardCache] 削除しました date=' + todayStr);
+}
+
 function setupMasterSheets() {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getBoundSpreadsheet_();
   var tz = TZ_;
   var todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
 
   setupCategories_(ss);
   setupTasks_(ss);
   ensureDailyRowsForToday_(ss, todayStr, tz);
+  invalidateDashboardCache_(todayStr);
 
   Logger.log('[setupMasterSheets] 完了（date=' + todayStr + '）。GAS ログで結果を確認してください。');
-  ss.toast('セットアップ完了', 'やったかい', 5);
+  try {
+    ss.toast('セットアップ完了', 'やったかい', 5);
+  } catch (toastErr) {
+    Logger.log('[setupMasterSheets] toast スキップ（API 実行等）: ' + String(toastErr));
+  }
 }
 
 /**
