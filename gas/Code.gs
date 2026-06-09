@@ -50,7 +50,7 @@ var LIFF_OPAQUE_EXP_MS_ = 90 * 86400000;
  * デプロイ確認用の識別子（Web アプリが最新デプロイかを判定するための「印」）。
  * 変更したら「新バージョン」で再デプロイし、この値で疎通確認する。
  */
-var DEPLOY_MARKER_ = '2026-06-09-daily-liff-closing-work';
+var DEPLOY_MARKER_ = '2026-06-09-fix-err-map-var-syntax';
 
 /** 日次 LIFF クライアント向けエラーコード → ユーザー文言（§1.3.1・§5.6） */
 var DASHBOARD_CLIENT_ERRORS_ = {
@@ -1401,8 +1401,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
   var js = [
     '(function(){',
     'var D=' + defaultDateJson + ',T=' + defaultTokenJson + ',AV=' + jsonLiteralForScriptTag_(avatarBaseUrl) + ',NS="http://www.w3.org/2000/svg";',
-    'var ERR_MAP=' + errMapJson + ',',
-    'var __D__=' + bakedJson + ';',
+    'var ERR_MAP=' + errMapJson + ',__D__=' + bakedJson + ';',
     'var root=document.getElementById("app"),stEl=document.getElementById("st");',
     'var qs=new URLSearchParams(window.location.search);',
     'var date=(qs.get("date")||"").trim()||D,token=(qs.get("token")||"").trim()||T;',
