@@ -22,10 +22,13 @@ Copy-Item -Path $src -Destination $dst -Recurse -Force
 
 ## チェックスクリプトの実行場所
 
-`scripts/check_invest_youtube_matome.mjs` は **スキルディレクトリをカレントにしなくても** `--file` に絶対パスを渡せば動く。
+`scripts/check_invest_youtube_matome.mjs` は **スキルディレクトリをカレントにしなくても** `--file` に絶対パスを渡せば動く。`deep.html` のときは `--mode deep`。
 
 ```powershell
-node "C:\Users\happy\.cursor\skills\invest-youtube-matome\scripts\check_invest_youtube_matome.mjs" --file "C:\path\to\generated.html"
+node "C:\Users\happy\.cursor\skills\invest-youtube-matome\scripts\check_invest_youtube_matome.mjs" --file "C:\path\to\index.html" --mode compact
+node "C:\Users\happy\.cursor\skills\invest-youtube-matome\scripts\check_invest_youtube_matome.mjs" --file "C:\path\to\deep.html" --mode deep
 ```
+
+Phase0 一括は [phase0-cli.md](phase0-cli.md) の **`digest-pipeline.mjs`（推奨）** または `scripts/phase0/phase0_make.mjs` を参照。
 
 リポジトリのみにスキルがある場合は、`$src` をその `invest-youtube-matome` パスに置き換える。

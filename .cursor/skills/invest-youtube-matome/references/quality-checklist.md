@@ -61,7 +61,7 @@
 | 目的 | コマンド |
 |------|----------|
 | 免責・YouTubeリンク・製作メタ・必須 id（`iyt-character-dialogue` 含む）・My Strategy 等の機械チェック | `node scripts/check_invest_youtube_matome.mjs --file {生成HTML}` |
-| Phase 0 JSON の必須キー検査 | `node scripts/validate-phase0-json.mjs --file {phase0.json}` |
+| Phase 0 JSON の必須キー検査 | `node scripts/phase0/validate-phase0-json.mjs --file {phase0.json}` |
 | デプロイ完了メール（Resend の `RESEND_API_KEY` / `RESEND_FROM` が必要） | `node scripts/notify_deploy_complete.mjs --url {公開URL} [--title 短い件名]` |
 
 - **`[FAIL]`**: 修正してから再実行する。  

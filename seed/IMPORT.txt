@@ -4,3 +4,4 @@ Google スプレッドシートへの取り込み（要約）
 2. 取り込んだタブの名前を、Categories / Tasks / Daily / Quotes にそれぞれ変更する。
 3. daily.csv の date 列は、運用開始日に合わせて全行を置き換えてよい（task_id は tasks と一致させる）。
 4. status 列: ◯=達成、× または x=未達成、空欄=未記入（設計書 §1.3）。
+5. Quotes シートは seed/quotes.csv と同じ列を推奨。`meaning` 列があると LIFF の「今日の一言」で意味全文を表示し、Gemini／テンプレのセリフ生成にも渡る（列が無い場合は空として動作）。

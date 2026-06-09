@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>パウエルFRBの「最後の会合」あと、相場は何を見る？（第2話） - 投資図解</title>
+  <meta name="description" content="4月末の米金融政策を中学生でもわかる比喩で整理。中央銀行の温度差・エネルギー・次の指標まで、ヒロ子とチャートマスターが一緒に読み解く。">
+
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="パウエルFRBの「最後の会合」あと、相場は何を見る？（第2話） - 投資図解">
+  <meta property="og:description" content="4月末の米金融政策を中学生でもわかる比喩で整理。中央銀行の温度差・エネルギー・次の指標まで。">
+  <meta property="og:url" content="https://invest-zukai-20260501-renew.surge.sh/">
+  <meta property="og:locale" content="ja_JP">
+  <meta property="og:image" content="https://invest-zukai-20260501-renew.surge.sh/hiroko-normal.png">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="パウエルFRBの「最後の会合」あと、相場は何を見る？（第2話） - 投資図解">
+  <meta name="twitter:description" content="4月末の米金融政策を中学生でもわかる比喩で整理。中央銀行の温度差・エネルギー・次の指標まで。">
+  <meta name="twitter:image" content="https://invest-zukai-20260501-renew.surge.sh/hiroko-normal.png">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Noto Sans JP', 'Inter', sans-serif;
+      min-height: 100vh;
+      background-color: #f1f5f9;
+      color: #0f172a;
+    }
+    .di-hero-canvas {
+      width: 100%;
+      background: linear-gradient(180deg, #0f172a 0%, #1e293b 55%, #0f172a 100%);
+      box-shadow: inset 0 -1px 0 rgba(255, 255, 255, 0.07);
+    }
+    .di-hero {
+      box-shadow: none;
+    }
+    .section-card { background: #fff; border-radius: 1rem; padding: 1.5rem; margin-bottom: 1.5rem; box-shadow: 0 4px 14px rgba(15,23,42,.08); border: 1px solid #e2e8f0; }
+    .char-bubble { position: relative; padding: 1rem 1.25rem; border-radius: 0.875rem; box-shadow: 0 1px 3px rgba(0,0,0,.06); }
+    .char-bubble::before { content: ''; position: absolute; left: -10px; top: 18px; width: 0; height: 0; border-style: solid; border-width: 8px 10px 8px 0; }
+    .chat-row { display: flex; align-items: flex-start; gap: 1rem; margin-bottom: 1.5rem; }
+    .chat-row--master { flex-direction: row-reverse; }
+    .chat-row--master .char-bubble { margin-left: 0; margin-right: 1rem; }
+    .chat-row--master .char-bubble::before { left: auto; right: -10px; border-width: 8px 0 8px 10px; }
+    .hiro-bubble { background: linear-gradient(135deg, #fdf2f8 0%, #fce7f3 100%); border: 2px solid #ec4899; }
+    .hiro-bubble::before { border-color: transparent #ec4899 transparent transparent; }
+    .chat-row--master .hiro-bubble::before { border-color: transparent transparent transparent #ec4899; }
+    .master-bubble { background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%); border: 2px solid #1e3a5f; }
+    .master-bubble::before { border-color: transparent #1e3a5f transparent transparent; }
+    .chat-row--master .master-bubble::before { border-color: transparent transparent transparent #1e3a5f; }
+    .term-explain { border-left: 4px solid #c9a227; padding: 0.75rem 1rem; background: #fffbeb; border-radius: 0 0.5rem 0.5rem 0; }
+    .term-word { color: #92400e; }
+    .badge-high { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 9999px; background: #fee2e2; color: #991b1b; font-weight: 700; }
+    .badge-mid { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 9999px; background: #fef3c7; color: #92400e; font-weight: 700; }
+    .badge-low { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 9999px; background: #e2e8f0; color: #475569; font-weight: 700; }
+    .badge-neutral { font-size: 0.7rem; padding: 0.15rem 0.5rem; border-radius: 9999px; background: #e0f2fe; color: #0369a1; font-weight: 700; }
+    .diagram-frame { border: 1px solid #e2e8f0; border-radius: 0.75rem; padding: 0.75rem; background: #fafafa; }
+    .diagram-caption { font-size: 0.8rem; color: #64748b; margin-top: 0.5rem; }
+    .opinion-table { border-collapse: collapse; font-size: 0.875rem; }
+    .opinion-table th, .opinion-table td { border: 1px solid #e2e8f0; padding: 0.6rem 0.75rem; text-align: left; }
+    .opinion-table thead { background: #f1f5f9; font-weight: 700; }
+    #toc-float { position: fixed; top: 5.5rem; right: 1rem; width: 13rem; max-height: 70vh; overflow-y: auto; z-index: 40; display: none; }
+    @media (min-width: 1280px) { #toc-float { display: block; } }
+    #toc-float a { display: block; font-size: 0.75rem; padding: 0.35rem 0.5rem; color: #334155; border-radius: 0.375rem; }
+    #toc-float a:hover { background: #e2e8f0; }
+  </style>
+</head>
+<body>
+  <div class="di-hero-canvas">
+  <header class="di-hero text-white px-4 pt-8 pb-16 max-w-4xl mx-auto">
+    <p class="di-hero__meta text-sm text-slate-200 mb-2">作成日: 2026年5月1日 · <span class="text-amber-200 font-medium">第2話</span>（前回: ニュース多すぎ問題から一歩進む回）</p>
+    <h1 class="di-hero__title text-2xl md:text-3xl font-bold leading-tight mb-4 text-white">パウエルFRBの「最後の会合」あと、相場は何を見る？</h1>
+    <p class="di-hero__deck text-slate-100 text-sm md:text-base max-w-2xl leading-relaxed">
+      ニュースは怖い言葉だらけ。でも今日は<strong class="text-white font-semibold">「水道の蛇口」</strong>と<strong class="text-white font-semibold">「意見の割れ」</strong>だけ押さえれば、見る場所がはっきりするよ。
+    </p>
+
+    <div class="di-hero__cast mt-8 rounded-2xl border border-white/15 bg-slate-900/90 backdrop-blur-sm p-4 md:p-5 shadow-lg">
+      <div class="flex flex-col sm:flex-row gap-5 sm:items-center sm:justify-start">
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-16 h-16 rounded-full overflow-hidden border-2 border-pink-400 shadow-md flex-shrink-0">
+            <img src="hiroko-normal.png" alt="ヒロ子（通常・連載ナビゲータ）" width="64" height="64" style="width:100%;height:100%;object-fit:cover;object-position:center top;">
+          </div>
+          <div>
+            <div class="font-bold text-slate-50 text-base">ヒロ子</div>
+            <div class="text-xs text-slate-200 leading-snug">投資歴3年・ギャルサラリーマン投資家</div>
+          </div>
+        </div>
+        <div class="hidden sm:block w-px self-stretch bg-white/15 shrink-0" aria-hidden="true"></div>
+        <div class="flex items-center gap-3 min-w-0">
+          <div class="w-16 h-16 rounded-full overflow-hidden border-2 border-amber-400 shadow-md flex-shrink-0">
+            <img src="ichisan-normal.png" alt="チャートマスター（通常・相場の師匠）" width="64" height="64" style="width:100%;height:100%;object-fit:cover;object-position:center top;">
+          </div>
+          <div>
+            <div class="font-bold text-slate-50 text-base">チャートマスター</div>
+            <div class="text-xs text-slate-200 leading-snug">相場歴40年超のベテラン（呼び名: イチさん）</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </header>
+  </div>
+
+  <nav id="toc-float" class="section-card !p-3 !mb-0 text-slate-700 shadow-lg">
+    <div class="text-xs font-bold text-slate-500 mb-2">目次</div>
+    <a href="#top3">今週の3ポイント</a>
+    <a href="#sectors">セクター体温</a>
+    <a href="#intro">導入</a>
+    <a href="#summary">市場サマリー</a>
+    <a href="#background">背景</a>
+    <a href="#wrap">まとめ対話</a>
+    <a href="#xnews">ニュース整理</a>
+    <a href="#indicators">指標ダッシュボード</a>
+    <a href="#history">過去の類似</a>
+    <a href="#scenario">シナリオ</a>
+    <a href="#stock">個別の見方</a>
+    <a href="#trend">トレンド</a>
+    <a href="#oneAction">一つだけ</a>
+  </nav>
+
+  <main class="max-w-4xl mx-auto px-4 pb-16 -mt-6 relative z-10">
+
+    <div class="section-card" id="top3">
+      <div class="flex items-center gap-3 mb-6">
+        <div class="w-12 h-12 rounded-xl flex items-center justify-center" style="background: linear-gradient(135deg, #c9a227, #f0d080);">
+          <i data-lucide="star" class="w-6 h-6 text-white"></i>
+        </div>
+        <div>
+          <h2 class="text-2xl font-bold text-gray-800">今週の投資判断3ポイント</h2>
+          <p class="text-gray-500 text-sm">まずここだけ。細かい数字は下で。</p>
+        </div>
+      </div>
+      <div class="grid gap-4">
+        <div class="flex items-start gap-4 p-4 bg-gradient-to-r from-amber-50 to-amber-100 rounded-xl border-l-4 border-amber-500">
+          <div class="w-10 h-10 bg-amber-500 text-white rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0">1</div>
+          <div>
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+              <span class="font-bold text-lg text-gray-800">FRBは据え置き。でも「文言」と「反対票」がザワついてる</span>
+              <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-amber-600 text-white">中立</span>
+              <span class="badge-high">重要度：高</span>
+            </div>
+            <p class="text-gray-600 text-sm">金利の蛇口はいま<strong>絞ったまま</strong>。株が動くのは「次に蛇口をどっちに回すか」の<strong>期待の振れ</strong>が主役になりやすい、って理解でOK。</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-4 p-4 bg-gradient-to-r from-red-50 to-red-100 rounded-xl border-l-4 border-red-500">
+          <div class="w-10 h-10 bg-red-500 text-white rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0">2</div>
+          <div>
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+              <span class="font-bold text-lg text-gray-800">エネルギーと地政学は「インフレの再点火」スイッチになりうる</span>
+              <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-red-600 text-white">弱気寄り</span>
+              <span class="badge-mid">重要度：中</span>
+            </div>
+            <p class="text-gray-600 text-sm">ガソリンや電気のコストが上がると、物価統計が動く。中銀は<strong>物価</strong>を見て蛇口を決めるから、相場は敏感になる。</p>
+          </div>
+        </div>
+        <div class="flex items-start gap-4 p-4 bg-gradient-to-r from-slate-50 to-slate-100 rounded-xl border-l-4 border-slate-400">
+          <div class="w-10 h-10 bg-slate-500 text-white rounded-full flex items-center justify-center font-bold text-lg flex-shrink-0">3</div>
+          <div>
+            <div class="flex items-center gap-2 mb-1 flex-wrap">
+              <span class="font-bold text-lg text-gray-800">「米だけ」じゃない。欧州など他の中銀の温度差が為替の材料</span>
+              <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-600 text-white">中立</span>
+              <span class="badge-low">重要度：中</span>
+            </div>
+            <p class="text-gray-600 text-sm">同じ「インフレ」でも、国によって<strong>今すぐ利上げ</strong>か<strong>様子見</strong>かが違う。円やドルの強弱は、そのズレから生まれることが多い。</p>
+          </div>
+        </div>
+      </div>
+      <div class="mt-4 p-3 rounded-xl bg-slate-50 border border-slate-200 text-sm text-gray-700">
+        <i data-lucide="check-circle" class="w-4 h-4 inline-block mr-1 text-slate-600"></i>
+        今日やるならこれ1つ → <a href="#oneAction" class="text-blue-700 underline font-bold">「今日から一つだけ」へジャンプ</a>
+      </div>
+    </div>
+
+    <div class="mt-6 chat-row chat-row--master">
+      <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-yellow-600 shadow-md">
+        <img src="ichisan-normal.png" alt="チャートマスター（通常・次セクションへのブリッジ）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+      </div>
+      <div class="char-bubble master-bubble flex-1">
+        <p class="text-base">
+          <span class="font-bold" style="color:#1e3a5f;">チャートマスター:</span><br>
+          次は、今日“強い/弱い”がどこに出たか。セクターでざっくり体温を見るじゃろう。
+        </p>
+      </div>
+    </div>
+
+    <div class="section-card" id="sectors">
+      <h2 class="text-2xl font-bold text-gray-800 mb-2 flex items-center gap-2"><i data-lucide="layout-grid" class="w-7 h-7 text-amber-600"></i> セクター別の体温（イメージ）</h2>
+      <p class="text-sm text-gray-600 mb-4">S&amp;P500の11分野の<strong>相対的な強さ</strong>。バーが長いほど「その日の主役に近い」イメージじゃ。</p>
+      <div class="diagram-frame mb-2">
+        <svg viewBox="0 0 500 288" xmlns="http://www.w3.org/2000/svg" class="max-w-full h-auto" role="img" aria-label="S&amp;P500セクター11分野の相対的な強弱イメージ">
+          <text x="250" y="13" text-anchor="middle" font-size="11" fill="#475569" font-weight="600">米株セッション — 相対的な強さ（イメージ）</text>
+          <text x="126" y="35" text-anchor="end" dominant-baseline="middle" font-size="10" fill="#334155" font-weight="600">情報技術</text>
+          <rect x="138" y="28" width="268" height="14" rx="4" fill="#16a34a"/>
+          <text x="126" y="57" text-anchor="end" dominant-baseline="middle" font-size="10" fill="#334155" font-weight="600">通信</text>
+          <rect x="138" y="50" width="200" height="14" rx="4" fill="#86efac"/>
+          <text x="126" y="79" text-anchor="end" dominant-baseline="middle" font-size="10" fill="#334155" font-weight="600">一般消費財</text>
+          <rect x="138" y="72" width="180" height="14" rx="4" fill="#86efac"/>
+          <text x="126" y="101" text-anchor="end" dominant-baseline="middle" font-size="10" fill="#334155" font-weight="600">生活必需品</text>
+          <rect x="138" y="94" width="120" height="14" rx="4" fill="#fbbf24"/>
+          <text x="126" y="123" text-anchor="end" dominant-baseline="middle" font-size="10" fill="#334155" font-weight="600">ヘルスケア</text>
+          <rect x="138" y="116" width="160" height="14" rx="4" fill="#86efac"/>
+          <text x="126" y="145" text-anchor="end" dominant-baseline="middle" font-size="10" fill="#334155" font-weight="600">金融</text>
+          <rect x="138" y="138" width="210" height="14" rx="4" fill="#86efac"/>
+          <text x="126" y="167" text-anchor="end" dominant-baseline="middle" font-size="10" fill="#334155" font-weight="600">資本財・産業</text>
+          <rect x="138" y="160" width="150" height="14" rx="4" fill="#fbbf24"/>
+          <text x="126" y="189" text-anchor="end" dominant-baseline="middle" font-size="10" fill="#334155" font-weight="600">素材</text>
+          <rect x="138" y="182" width="190" height="14" rx="4" fill="#86efac"/>
+          <text x="126" y="211" text-anchor="end" dominant-baseline="middle" font-size="10" fill="#334155" font-weight="600">エネルギー</text>
+          <rect x="138" y="204" width="240" height="14" rx="4" fill="#16a34a"/>
+          <text x="126" y="233" text-anchor="end" dominant-baseline="middle" font-size="10" fill="#334155" font-weight="600">公益事業</text>
+          <rect x="138" y="226" width="100" height="14" rx="4" fill="#fbbf24"/>
+          <text x="126" y="255" text-anchor="end" dominant-baseline="middle" font-size="10" fill="#334155" font-weight="600">不動産</text>
+          <rect x="138" y="248" width="110" height="14" rx="4" fill="#fbbf24"/>
+          <text x="250" y="276" text-anchor="middle" font-size="9" fill="#64748b">※イメージ図。厳密な％は各社の画面で確認してのう。</text>
+        </svg>
+        <p class="diagram-caption">エネルギーとITが伸びやすい日は、「景気期待」と「金利の心地よさ」のどっちが勝ってるか」を見比べると読みが進むじゃろう。</p>
+      </div>
+      <p class="text-xs text-gray-500">数値は執筆時点の最新表示ベース（表示遅延の可能性あり）。</p>
+    </div>
+
+    <div class="section-card" id="intro">
+      <h2 class="text-2xl font-bold text-gray-800 mb-4">導入：ニュース、多すぎ問題</h2>
+      <div class="chat-row chat-row--hiro">
+        <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-violet-500 shadow-md">
+          <img src="hiroko-confused.png" alt="ヒロ子（混乱・ニュースの洪水）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+        </div>
+        <div class="char-bubble hiro-bubble flex-1">
+          <p class="text-base">
+            <span class="font-bold" style="color:#be185d;">ヒロ子:</span><br>
+            「パウエル」「据え置き」「反対票」「売り五月」……なんか全部大事っぽいんだけど、あたしの頭パンクしそう。株、上がるの？下がるの？どっち見ればいいの？
+          </p>
+        </div>
+      </div>
+      <div class="chat-row chat-row--master">
+        <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-yellow-600 shadow-md">
+          <img src="ichisan-serious.png" alt="チャートマスター（真剣・論点の整理）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+        </div>
+        <div class="char-bubble master-bubble flex-1">
+          <p class="text-base">
+            <span class="font-bold" style="color:#1e3a5f;">チャートマスター:</span><br>
+            今日の整理は二つに分けるのがええ。「政策の<strong>結果</strong>（金利は動いたか）」と「政策の<strong>物語</strong>（次は誰が蛇口を握るか）」じゃ。<br>
+            いま相場がザワついてるのは後者——つまり<strong>期待の振り子</strong>が大きい局面、と捉えると迷子にならんよ。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="mt-6 chat-row chat-row--hiro">
+      <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-pink-400 shadow-md">
+        <img src="hiroko-happy.png" alt="ヒロ子（笑顔・次セクションへ）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+      </div>
+      <div class="char-bubble hiro-bubble flex-1">
+        <p class="text-base">
+          <span class="font-bold" style="color:#be185d;">ヒロ子:</span><br>
+          よし、じゃあ世界の指数とかドル円とか、いったん一覧で眺めよ。
+        </p>
+      </div>
+    </div>
+
+    <div class="section-card" id="summary">
+      <h2 class="text-2xl font-bold text-gray-800 mb-2 flex items-center gap-2"><i data-lucide="globe" class="w-7 h-7 text-blue-600"></i> グローバル市場サマリー</h2>
+      <div class="diagram-frame mb-4">
+        <svg viewBox="0 0 540 200" xmlns="http://www.w3.org/2000/svg" class="max-w-full h-auto" role="img" aria-label="地域と資産の体温イメージ">
+          <text x="270" y="14" text-anchor="middle" font-size="11" fill="#475569" font-weight="600">直近 — 地域・資産の体温（イメージ）</text>
+          <rect x="16" y="32" width="160" height="44" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+          <text x="96" y="58" text-anchor="middle" font-size="10" fill="#334155">米国株</text>
+          <text x="96" y="72" text-anchor="middle" font-size="9" fill="#64748b">高値圏〜堅調イメージ</text>
+          <rect x="190" y="32" width="160" height="44" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+          <text x="270" y="58" text-anchor="middle" font-size="10" fill="#334155">日本株</text>
+          <text x="270" y="72" text-anchor="middle" font-size="9" fill="#64748b">海外要因に連動しやすい</text>
+          <rect x="364" y="32" width="160" height="44" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+          <text x="444" y="58" text-anchor="middle" font-size="10" fill="#334155">欧州</text>
+          <text x="444" y="72" text-anchor="middle" font-size="9" fill="#64748b">中銀トーン注視</text>
+          <rect x="16" y="88" width="250" height="44" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+          <text x="141" y="114" text-anchor="middle" font-size="10" fill="#334155">米10年利回り</text>
+          <text x="141" y="128" text-anchor="middle" font-size="9" fill="#64748b">高止まりイメージ</text>
+          <rect x="274" y="88" width="250" height="44" rx="8" fill="#f8fafc" stroke="#cbd5e1"/>
+          <text x="399" y="114" text-anchor="middle" font-size="10" fill="#334155">原油・ドル円</text>
+          <text x="399" y="128" text-anchor="middle" font-size="9" fill="#64748b">地政学で敏感になりやすい</text>
+          <text x="270" y="188" text-anchor="middle" font-size="9" fill="#64748b">※イメージ図。個別の水準は口座画面で確認じゃ。</text>
+        </svg>
+        <p class="diagram-caption">「株だけ」見てるとズレる。金利とエネルギーをセットで見ると、ニュースの意味がつながる。</p>
+      </div>
+      <p class="text-xs text-gray-500 mb-4">数値は執筆時点の最新表示ベース（表示遅延の可能性あり）。</p>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm border border-gray-200 rounded-xl overflow-hidden">
+          <thead class="bg-slate-100"><tr><th class="p-2 text-left">エリア</th><th class="p-2 text-left">今日の見立て（超ざっくり）</th></tr></thead>
+          <tbody class="divide-y divide-gray-100">
+            <tr><td class="p-2 font-medium">米国</td><td class="p-2 text-gray-700">金融政策の「次の物語」に反応しやすい</td></tr>
+            <tr><td class="p-2 font-medium">日本</td><td class="p-2 text-gray-700">円と輸出企業のバランスが毎日のテーマになりやすい</td></tr>
+            <tr><td class="p-2 font-medium">欧州</td><td class="p-2 text-gray-700">米国と温度差が出ると、為替が動きやすい</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mt-6 chat-row chat-row--master">
+      <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-yellow-600 shadow-md">
+        <img src="ichisan-happy.png" alt="チャートマスター（笑顔・背景セクションへ）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+      </div>
+      <div class="char-bubble master-bubble flex-1">
+        <p class="text-base">
+          <span class="font-bold" style="color:#1e3a5f;">チャートマスター:</span><br>
+          さて、いま起きてることを「水道の蛇口」でほどいてみようかのう。
+        </p>
+      </div>
+    </div>
+
+    <div class="section-card" id="background">
+      <h2 class="text-2xl font-bold text-gray-800 mb-4">背景：蛇口と「中銀の会議室」</h2>
+      <div class="bg-gradient-to-r from-blue-50 to-cyan-50 p-5 rounded-xl border border-blue-200 my-4">
+        <div class="flex items-center gap-2 mb-3">
+          <i data-lucide="droplets" class="w-6 h-6 text-blue-600"></i>
+          <span class="font-bold text-blue-800">たとえ話：水道の蛇口</span>
+        </div>
+        <p class="text-gray-700 text-sm leading-relaxed">中央銀行はざっくり言うと、経済というお風呂にお湯（お金の量と金利のしやすさ）を入れる係じゃ。<strong>蛇口を締める（引き締め）</strong>と借りにくくなる。株は「将来の夢」を価格にするから、蛇口の見通しが変わると反応しやすい。</p>
+      </div>
+      <div class="term-explain my-4">
+        <div class="term-word text-lg font-bold">FOMC（えふおーえむしー）って？</div>
+        <div class="text-sm text-gray-700 mt-1">米国の中央銀行（FRB）が「政策金利をどうするか」を話し合う定例会じゃ。ここで出る声明文は、世界中の投資家が一斉に読む「公式の言葉」なんじゃよ。</div>
+      </div>
+      <p class="text-gray-700 text-sm leading-relaxed mb-4">4月下旬の会合では、市場の注目どおり<strong>政策金利の据え置き</strong>が報じられた。同時に、声明の文言や投票に<strong>割れ目</strong>が見えた、という整理ができる。パウエル議長は役割の移行期にあり、後任人事やFRB内のバランスも「物語」の一部になる——とニュースは書きがちじゃ。</p>
+      <p class="text-xs text-gray-500">一次情報の例: <a href="https://www.reuters.com/world/us/fed-decision-live-us-central-bank-set-hold-rates-what-could-be-powells-last-2026-04-29/" class="text-blue-700 underline" target="_blank" rel="noopener noreferrer">Reuters（会合当日の流れ）</a>、<a href="https://www.reuters.com/business/finance/global-markets-central-banks-graphic-2026-04-30/" class="text-blue-700 underline" target="_blank" rel="noopener noreferrer">Reuters（主要中銀のグラフィック記事）</a>、<a href="https://www.reuters.com/business/take-five/global-markets-themes-graphic-2026-05-01/" class="text-blue-700 underline" target="_blank" rel="noopener noreferrer">Reuters（5月の市場テーマ）</a>。</p>
+      <div class="chat-row chat-row--hiro mt-6">
+        <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-orange-400 shadow-md">
+          <img src="hiroko-surprise.png" alt="ヒロ子（驚き・反対票の話）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+        </div>
+        <div class="char-bubble hiro-bubble flex-1">
+          <p class="text-base">
+            <span class="font-bold" style="color:#be185d;">ヒロ子:</span><br>
+            え、反対票って……中銀の人たちも意見バラバラなの？あたし、全員仲良しだと思ってた。
+          </p>
+        </div>
+      </div>
+      <div class="chat-row chat-row--master">
+        <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-yellow-600 shadow-md">
+          <img src="ichisan-serious.png" alt="チャートマスター（真剣・説明）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+        </div>
+        <div class="char-bubble master-bubble flex-1">
+          <p class="text-base">
+            <span class="font-bold" style="color:#1e3a5f;">チャートマスター:</span><br>
+            仲良しもするが、役割は違う。景気と物価と金融の安定——そのトレードオフで、意見が割れることはある。<br>
+            大事なのは「割れた」という事実そのものより、<strong>市場がどの言葉に過剰反応したか</strong>じゃ。過剰反応は、すぐに戻ることもあれば、トレンドになることもある。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-card" id="wrap">
+      <h2 class="text-2xl font-bold text-gray-800 mb-4">まとめ対話：今日の誤解をひとつ潰す</h2>
+      <div class="chat-row chat-row--hiro">
+        <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-pink-400 shadow-md">
+          <img src="hiroko-normal.png" alt="ヒロ子（通常・確認）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+        </div>
+        <div class="char-bubble hiro-bubble flex-1">
+          <p class="text-base">
+            <span class="font-bold" style="color:#be185d;">ヒロ子:</span><br>
+            「据え置き＝株は安心」って思ってたけど、違うの？
+          </p>
+        </div>
+      </div>
+      <div class="chat-row chat-row--master">
+        <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-yellow-600 shadow-md">
+          <img src="ichisan-angry.png" alt="チャートマスター（注意・過信への警鐘）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+        </div>
+        <div class="char-bubble master-bubble flex-1">
+          <p class="text-base">
+            <span class="font-bold" style="color:#1e3a5f;">チャートマスター:</span><br>
+            安心は<strong>一時的</strong>になりがちじゃ。据え置きでも、声明がタカ派的に読めた日は金利が動く。金利が動けば、株の割引計算も動く。<br>
+            つまり「結果が同じでも、読み方が変わる」ときがある、ということじゃよ。
+          </p>
+        </div>
+      </div>
+      <div class="chat-row chat-row--hiro">
+        <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-rose-400 shadow-md">
+          <img src="hiroko-bashful.png" alt="ヒロ子（照れ・納得）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+        </div>
+        <div class="char-bubble hiro-bubble flex-1">
+          <p class="text-base">
+            <span class="font-bold" style="color:#be185d;">ヒロ子:</span><br>
+            なるほど……ニュースは「答え」じゃなくて「材料」なんだ。じゃあ次、表でニュース整理いこ。
+          </p>
+        </div>
+      </div>
+      <div class="chat-row chat-row--master">
+        <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-yellow-600 shadow-md">
+          <img src="ichisan-normal.png" alt="チャートマスター（通常・同意）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+        </div>
+        <div class="char-bubble master-bubble flex-1">
+          <p class="text-base">
+            <span class="font-bold" style="color:#1e3a5f;">チャートマスター:</span><br>
+            ええな。表は「全部追う」ためじゃない。<strong>見る順番</strong>を固定するためじゃ。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section-card" id="xnews">
+      <h2 class="text-2xl font-bold text-gray-800 mb-2 flex items-center gap-2"><i data-lucide="newspaper" class="w-7 h-7 text-slate-600"></i> 世界ニュースの整理（直近48時間の“型”）</h2>
+      <p class="text-sm text-gray-600 mb-4">ここではX投稿ではなく、<strong>論点ごとに一次系の見出し</strong>を並べた。数字の細部は各リンク先で。</p>
+      <div class="overflow-x-auto mb-6">
+        <table class="opinion-table w-full rounded-xl overflow-hidden">
+          <thead>
+            <tr>
+              <th>論点</th>
+              <th>要旨</th>
+              <th>リンク</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="font-medium">米金融政策</td>
+              <td>据え置きと人事・内部分岐が同時に注目された</td>
+              <td><a href="https://www.reuters.com/business/fed-likely-hold-rates-steady-what-may-be-last-meeting-powell-era-2026-04-29/" class="text-blue-700 underline" target="_blank" rel="noopener noreferrer">Reuters</a></td>
+            </tr>
+            <tr>
+              <td class="font-medium">主要中銀</td>
+              <td>米欧などのスタンス差が為替・金利に波及しうる</td>
+              <td><a href="https://www.reuters.com/business/finance/global-markets-central-banks-graphic-2026-04-30/" class="text-blue-700 underline" target="_blank" rel="noopener noreferrer">Reuters</a></td>
+            </tr>
+            <tr>
+              <td class="font-medium">5月のカレンダー</td>
+              <td>イベント集中の月としての見立てが語られることがある</td>
+              <td><a href="https://www.reuters.com/business/take-five/global-markets-themes-graphic-2026-05-01/" class="text-blue-700 underline" target="_blank" rel="noopener noreferrer">Reuters</a></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200 text-sm text-gray-700">
+        <span class="font-bold text-slate-800">深掘りしたい人向け（検索の例）：</span>
+        「FOMC dissents」「US payrolls May 2026」「WTI crude」「USDJPY intervention」
+      </div>
+    </div>
+
+    <div class="mt-6 chat-row chat-row--hiro">
+      <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-orange-400 shadow-md">
+        <img src="hiroko-normal.png" alt="ヒロ子（通常・指標セクションへ）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+      </div>
+      <div class="char-bubble hiro-bubble flex-1">
+        <p class="text-base">
+          <span class="font-bold" style="color:#be185d;">ヒロ子:</span><br>
+          次、なんかプロっぽい指標ダッシュボードっしょ。ビビらないでいくわ。
+        </p>
+      </div>
+    </div>
+
+    <div class="section-card" id="indicators">
+      <h2 class="text-2xl font-bold text-gray-800 mb-4">底打ち・熱量のチェック（ざっくり目安）</h2>
+      <div class="grid md:grid-cols-2 gap-4 text-sm">
+        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50">
+          <div class="font-bold text-slate-800 mb-1">VIX（恐怖指数）</div>
+          <p class="text-gray-700">上がりすぎは「パニック寄り」、下がりすぎは「油断寄り」。<strong>急変</strong>の方が意味が大きいことが多い。</p>
+        </div>
+        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50">
+          <div class="font-bold text-slate-800 mb-1">米10年利回り</div>
+          <p class="text-gray-700">成長株の割引率の芯。ここが跳ねる日は、ITが揺れやすいイメージ。</p>
+        </div>
+        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50">
+          <div class="font-bold text-slate-800 mb-1">雇用統計（次のイベント）</div>
+          <p class="text-gray-700">労働市場が強すぎると「インフレ再燃→蛇口は緩めにくい」読みが出やすい。カレンダーに印じゃ。</p>
+        </div>
+        <div class="p-4 rounded-xl border border-slate-200 bg-slate-50">
+          <div class="font-bold text-slate-800 mb-1">原油</div>
+          <p class="text-gray-700">企業のコストと家計の気分の両方に効く。地政学ニュースとセットで見る。</p>
+        </div>
+      </div>
+      <p class="text-xs text-gray-500 mt-4">数値は執筆時点の最新表示ベース（表示遅延の可能性あり）。</p>
+    </div>
+
+    <div class="section-card" id="history">
+      <h2 class="text-2xl font-bold text-gray-800 mb-4">過去の類似：「声明がタカ派に読めた日」</h2>
+      <p class="text-sm text-gray-700 leading-relaxed mb-4">歴史は繰り返さないが、韻を踏む。過去にも、政策レートは据え置きでも、声明の一行で金利が跳ね、翌日に株が反転した局面は何度もある。いま覚えるべきは<strong>パターン名</strong>——「据え置き＝無風」ではない、ということじゃ。</p>
+      <p class="text-xs text-gray-500">学習用の一般論であり、特定の銘柄の推奨ではありません。</p>
+    </div>
+
+    <div class="mt-6 chat-row chat-row--master">
+      <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-yellow-600 shadow-md">
+        <img src="ichisan-serious.png" alt="チャートマスター（真剣・シナリオへ）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+      </div>
+      <div class="char-bubble master-bubble flex-1">
+        <p class="text-base">
+          <span class="font-bold" style="color:#1e3a5f;">チャートマスター:</span><br>
+          強気と弱気、分岐点を短く置いておくわい。
+        </p>
+      </div>
+    </div>
+
+    <div class="section-card" id="scenario">
+      <h2 class="text-2xl font-bold text-gray-800 mb-4">強気シナリオ / 弱気シナリオ</h2>
+      <div class="grid md:grid-cols-2 gap-4">
+        <div class="p-4 rounded-xl border-2 border-green-200 bg-green-50">
+          <div class="font-bold text-green-900 mb-2">強気になりやすい条件（例）</div>
+          <ul class="list-disc list-inside text-sm text-gray-800 space-y-1">
+            <li>インフレの鈍化が続くデータが積み上がる</li>
+            <li>地政学リスクが落ち着き、エネルギーが落ち着く</li>
+            <li>金利が期待より下がる（蛇口の見通しが緩む）</li>
+          </ul>
+        </div>
+        <div class="p-4 rounded-xl border-2 border-red-200 bg-red-50">
+          <div class="font-bold text-red-900 mb-2">弱気になりやすい条件（例）</div>
+          <ul class="list-disc list-inside text-sm text-gray-800 space-y-1">
+            <li>雇用が強すぎて、利下げ期待が後退する</li>
+            <li>原油高が続き、物価統計が再加速する</li>
+            <li>主要指数が重要線を割り、トレンドが崩れる</li>
+          </ul>
+        </div>
+      </div>
+      <p class="text-sm text-gray-600 mt-4"><strong>分岐点</strong>：次の米雇用統計、主要中銀のイベント、そして金利（米10年）の急変。</p>
+    </div>
+
+    <div class="section-card" id="stock">
+      <h2 class="text-2xl font-bold text-gray-800 mb-4">個別株は「全部」見ない</h2>
+      <p class="text-sm text-gray-700 mb-4">初心者ほど銘柄を増やしがちじゃが、まずは指数とセクターで体温を見る。個別は<strong>自分が生活で触れる会社</strong>から1〜2銘柄で十分じゃ。</p>
+      <div class="overflow-x-auto mb-4">
+        <table class="w-full text-sm border border-gray-200 rounded-xl overflow-hidden">
+          <thead class="bg-slate-100"><tr><th class="p-2 text-left">視点</th><th class="p-2 text-left">恩恵を受けやすい側（例）</th><th class="p-2 text-left">逆風を受けやすい側（例）</th></tr></thead>
+          <tbody class="divide-y divide-gray-100">
+            <tr><td class="p-2 font-bold text-slate-700">原油高</td><td class="p-2">エネルギー関連</td><td class="p-2">燃料コストが重い運輸など</td></tr>
+            <tr><td class="p-2 font-bold text-slate-700">円安</td><td class="p-2">海外売上比率が高い製造業など</td><td class="p-2">輸入コストが重い内需など</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="text-xs text-gray-500">※銘柄はあくまで例。投資判断は各自の責任で。</p>
+    </div>
+
+    <div class="section-card" id="trend">
+      <h2 class="text-2xl font-bold text-gray-800 mb-2">今日のトレンド（話題の見方）</h2>
+      <p class="text-sm text-gray-700">SNSは早いが、ノイズも多い。やることは一つでええ。<strong>一次→指数→自分のルール</strong>の順番を守るんじゃ。</p>
+    </div>
+
+    <div class="section-card" id="oneAction">
+      <h2 class="text-2xl font-bold text-gray-800 mb-3 flex items-center gap-2"><i data-lucide="sparkles" class="w-7 h-7 text-amber-500"></i> 今日から一つだけやれること</h2>
+      <p class="text-gray-800 font-medium mb-2">スマホのホーム画面に「次の米雇用統計の日付」を1行メモする（中銀と同じカレンダーの見方の練習）。</p>
+      <p class="text-xs text-gray-500 mb-6">この記事は教育目的の一般情報であり、特定の金融商品の売買を勧めるものではありません。</p>
+
+      <div id="closing" class="border-t border-slate-200 pt-6 mt-6">
+        <div class="chat-row chat-row--hiro">
+          <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-pink-400 shadow-md">
+            <img src="hiroko-happy.png" alt="ヒロ子（笑顔・締め）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+          </div>
+          <div class="char-bubble hiro-bubble flex-1">
+            <p class="text-base">
+              <span class="font-bold" style="color:#be185d;">ヒロ子:</span><br>
+              今日の主線は「据え置き＝終わり」じゃなくて、<strong>期待の振れ</strong>ってことね。あとカレンダー1個。これなら覚えられる。
+            </p>
+          </div>
+        </div>
+        <div class="chat-row chat-row--master">
+          <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-yellow-600 shadow-md">
+            <img src="ichisan-happy.png" alt="チャートマスター（笑顔・締め）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+          </div>
+          <div class="char-bubble master-bubble flex-1">
+            <p class="text-base">
+              <span class="font-bold" style="color:#1e3a5f;">チャートマスター:</span><br>
+              ええ。一次の見出しで論点を決め、指数で体温を見る。それからに銘柄じゃ。焦りは相場の敵である。
+            </p>
+          </div>
+        </div>
+        <div class="chat-row chat-row--hiro">
+          <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-pink-400 shadow-md">
+            <img src="hiroko-normal.png" alt="ヒロ子（通常・復唱）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+          </div>
+          <div class="char-bubble hiro-bubble flex-1">
+            <p class="text-base">
+              <span class="font-bold" style="color:#be185d;">ヒロ子:</span><br>
+              了解。次はその雇用統計の日、一緒にリアクション見よっか。
+            </p>
+          </div>
+        </div>
+        <div class="chat-row chat-row--master">
+          <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-yellow-600 shadow-md">
+            <img src="ichisan-normal.png" alt="チャートマスター（通常・返答）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+          </div>
+          <div class="char-bubble master-bubble flex-1">
+            <p class="text-base">
+              <span class="font-bold" style="color:#1e3a5f;">チャートマスター:</span><br>
+              望むところじゃ。読む順番が身についてきたら、もう一段階いけるようになるわい。
+            </p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <footer class="mt-10 pb-10">
+      <div class="section-card">
+        <div class="chat-row chat-row--hiro">
+          <div class="w-16 h-16 rounded-full overflow-hidden flex-shrink-0 border-2 border-orange-400 shadow-md">
+            <img src="hiroko-happy.png" alt="ヒロ子（笑顔・締めのあいさつ）" style="width:100%; height:100%; object-fit:cover; object-position:center top;">
+          </div>
+          <div class="char-bubble hiro-bubble flex-1">
+            <p class="text-base">
+              <span class="font-bold" style="color:#be185d;">ヒロ子:</span><br>
+              最後まで読んでくれてサンキュー。<strong>「ヒロ子とチャートマスターの投資教室」</strong>は、投資がちょい苦手な人でもニュースを追いかけられるようにする連載だよ。難しい言葉は用語ボックスでほどいていくからね。
+            </p>
+          </div>
+        </div>
+        <div class="flex gap-3 mt-4 flex-wrap">
+          <a href="https://twitter.com/intent/tweet?text=%E3%83%91%E3%82%A6%E3%82%A8%E3%83%ABFRB%E3%81%AE%E3%80%8C%E6%9C%80%E5%BE%8C%E3%81%AE%E4%BC%9A%E5%90%88%E3%80%8D%E3%81%82%E3%81%A8%E3%80%81%E7%9B%B8%E5%A0%B4%E3%81%AF%E4%BD%95%E3%82%92%E8%A6%8B%E3%82%8B%EF%BC%9F%20%23%E6%8A%95%E8%B3%87%E5%9B%B3%E8%A7%A3&amp;url=https%3A%2F%2Finvest-zukai-20260501-renew.surge.sh%2F&amp;via=RdainariG73"
+             target="_blank" rel="noopener noreferrer"
+             class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white"
+             style="background:#1d9bf0;">
+            <i data-lucide="twitter" class="w-4 h-4"></i> Xでシェア
+          </a>
+          <a href="https://x.com/RdainariG73"
+             target="_blank" rel="noopener noreferrer"
+             class="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold border border-slate-200 bg-white text-slate-800">
+            <i data-lucide="user-plus" class="w-4 h-4"></i> フォロー（@RdainariG73）
+          </a>
+        </div>
+      </div>
+    </footer>
+  </main>
+
+  <script>
+    lucide.createIcons();
+  </script>
+</body>
+</html>

@@ -9,19 +9,26 @@
  *   AVATAR_BASE_URL（任意）… キャラ画像を配信する URL（末尾スラッシュなし）。例: https://yattakai-avatars.surge.sh
  *                             未設定時は LIFF でテキストのみ表示（フォールバック）
  *   LIFF_URL（任意）… 設定時のみプッシュ末尾に「ダッシュボード: …?date=…&token=…」を付与
+ *   BOUND_SPREADSHEET_ID（任意）… スプレッドシート ID。ウェブアプリ / google.script.run で
+ *     getActiveSpreadsheet が取れないときに openById する。**初回**: スプレッドシートからスクリプトを開き
+ *     ensureSpreadsheetBinding を 1 回実行すると自動保存される（手入力でも可）
  *   SKIP_DASH_TOKEN_CHECK（任意）… true のとき token 検証をスキップ（開発用のみ・本番は設定しない）
  *
  * シート: Daily / Tasks / Quotes（§4）… シート名は SPEC どおり英字
  *
  * Web アプリ doGet:
  *   ?format=json&date=yyyy-MM-dd&token=… … ダッシュボード用 DTO（token は当日プッシュで発行）
+ *   ?oid=<32hex> … 週次振り返り（不透明 ID。weekStart/token をサーバー正本から復元。LIFF でクエリ欠落しても日次に落ちない）
+ *   週次従来: ?weekStart=…&token=…&yw=1（後方互換）
  *   上記以外 … LIFF 向け HTML（google.script.run で JSON 相当データを取得）
  *
  * 初回セットアップ:
  *   1. installDailyReminderTrigger を 1 回実行（毎日 17:40 JST に sendDailyReminder）
- *   2. installMorningMessageTrigger を 1 回実行（毎日朝 sendMorningMessage。時刻は MORNING_LINE_HOUR_JST_、既定 8 時 JST 前後。コード変更後は必ず再実行）
+ *   2. installMorningMessageTrigger を 1 回実行（毎日朝 sendMorningMessage。時刻は MORNING_PUSH_* 定数・既定 7 時台 JST 目標。コード変更後は必ず再実行）
  *   3. installWeeklyReviewTrigger を 1 回実行（毎週土曜 sendWeeklyReview。時刻は WEEKLY_REVIEW_HOUR_JST_、既定 8 時台 JST 前後）
  *   4. installCleanupTrigger を 1 回実行（毎週月曜 3:00 JST に cleanupOldDashTokens）
+ *   5. （推奨）スプレッドシートから本プロジェクトを開いた状態で ensureSpreadsheetBinding を 1 回実行
+ *      … LIFF / ウェブアプリで getActiveSpreadsheet が無い環境でもシートに接続できるようにする
  * 変更後は gas で clasp push のあと、ウェブアプリを「新バージョン」で再デプロイすること。
  */
 
@@ -31,6 +38,22 @@ var DASH_TOKEN_PROP_PREFIX_ = 'yattakai_dash_token_';
 /** 週次ダッシュ用トークンのスクリプトプロパティキー接頭辞（§付録 A.3） */
 var WEEK_TOKEN_PROP_PREFIX_ = 'yattakai_week_token_';
 
+/**
+ * LIFF 経由で weekStart / token が GAS の e.parameter に届かない場合の根本対策:
+ * 短い不透明 ID（oid）だけを URL に載せ、週次の weekStart・週次 token は Script Properties の JSON を正本とする。
+ * キー: yattakai_liff_oid_<32hex> 値: { v, scope, weekStart, token, exp, iat }
+ */
+var LIFF_OPAQUE_OPEN_PREFIX_ = 'yattakai_liff_oid_';
+
+/** 不透明リンクの有効期限（ms）。cleanupOldDashTokens の既定保持（90 日）と整合 */
+var LIFF_OPAQUE_EXP_MS_ = 90 * 86400000;
+
+/**
+ * デプロイ確認用の識別子（Web アプリが最新デプロイかを判定するための「印」）。
+ * 変更したら「新バージョン」で再デプロイし、この値で疎通確認する。
+ */
+var DEPLOY_MARKER_ = '2026-05-13-donut-arc-fix';
+
 /** CacheService キー接頭辞と TTL（30 分）*/
 var CACHE_KEY_PREFIX_ = 'yattakai_dash_v1_';
 var CACHE_TTL_SEC_    = 1800;
@@ -39,15 +62,30 @@ var CACHE_TTL_SEC_    = 1800;
 var TZ_ = 'Asia/Tokyo';
 
 /**
- * 朝の「今日の始まり」LINE（installMorningMessageTrigger / sendMorningMessage）の開始時（JST、0–23）。
- * nearMinute(0) と組み合わせる。GAS の実行時刻は SPEC §1.1.1 のとおり前後にずれうる。
- * 土曜は sendWeeklyReview（§1.4）も別トリガで同じ時台になり、2 本のプッシュが近い時間に届きうる。
+ * ウェブアプリ・google.script.run で Active が無いときに SpreadsheetApp.openById するための
+ * Script Properties キー（ensureSpreadsheetBinding または getBoundSpreadsheet_ が書き込む）。
  */
-var MORNING_LINE_HOUR_JST_ = 8;
+var BOUND_SPREADSHEET_ID_KEY_ = 'BOUND_SPREADSHEET_ID';
+
+/**
+ * 朝 LINE（installMorningMessageTrigger / sendMorningMessage）のスケジュール（JST = TZ_）。
+ *
+ * 正本: この定数を読むのは **installMorningMessageTrigger のみ**（Google のクロックトリガに書き込む値）。
+ * clasp push やコード保存だけではトリガは更新されないため、時刻を変えたら **必ず install を再実行**すること。
+ *
+ * 目標: 7:00〜8:59 のうち早い時間帯（7 時台中心）。GAS の遅延で 8〜9 時台にずれることはありうる（SPEC §1.1.1）。
+ * 土曜は sendWeeklyReview（§1.4 W-2）が 8 時台の別トリガのため、朝と週次の 2 本が近い午前に届く場合がある。
+ */
+var MORNING_PUSH_HOUR_JST_ = 7;
+/**
+ * atHour(hour) と組み合わせる 15 分窓の開始分（0 なら当該時の :00 から :14 付近に起動しうる）。
+ * @see https://developers.google.com/apps-script/reference/script/clock-trigger-builder#nearMinute(Integer)
+ */
+var MORNING_PUSH_NEAR_MINUTE_JST_ = 0;
 
 /**
  * 週次振り返り（installWeeklyReviewTrigger / sendWeeklyReview）の土曜トリガの時（JST、0–23）。§1.4 W-2。
- * 値は朝プッシュ（MORNING_LINE_HOUR_JST_）と同じ 8 でも、**別トリガ・別ロック**であり土曜のみ両方が動きうる。
+ * 朝プッシュ（`MORNING_PUSH_HOUR_JST_` 既定 7）とは別定数。**別トリガ・別ロック**であり土曜は両方が動きうる。
  */
 var WEEKLY_REVIEW_HOUR_JST_ = 8;
 
@@ -160,6 +198,48 @@ function installDailyReminderTrigger() {
 }
 
 /**
+ * プロジェクト内のトリガ一覧をログに出す（監査・原因特定用）。
+ *
+ * 目的:
+ * - 「朝が 9 時に来る」等の違和感があったとき、まず **どの関数のトリガが何本あるか**を確定する。
+ * - 旧設定（例: 9 時台想定）で作られたトリガが残っていないかを早期発見する。
+ *
+ * 注意:
+ * - GAS の Trigger オブジェクトは timeBased の **設定時刻そのものを取得できない**ため、
+ *   この関数は「本数とハンドラ名」の監査に特化する。
+ */
+function auditProjectTriggers() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var counts = {};
+  Logger.log('[auditProjectTriggers] tz=' + TZ_ + ' triggers=' + triggers.length);
+  for (var i = 0; i < triggers.length; i++) {
+    var h = triggers[i].getHandlerFunction();
+    counts[h] = (counts[h] || 0) + 1;
+  }
+  var keys = Object.keys(counts).sort();
+  for (var k = 0; k < keys.length; k++) {
+    Logger.log('[auditProjectTriggers] handler=' + keys[k] + ' count=' + counts[keys[k]]);
+  }
+  Logger.log(
+    '[auditProjectTriggers] expected: sendMorningMessage=1 sendDailyReminder=1 sendWeeklyReview=1 cleanupOldDashTokens=1（必要なものだけ）'
+  );
+}
+
+/**
+ * トリガまわりの「よくある事故」を防ぐための一括インストール。
+ *
+ * - これを 1 回実行すれば、トリガが全部「1本ずつ」に揃う。
+ * - 時刻を変えたときも、個別 install の実行漏れを防げる。
+ */
+function installAllTimeTriggers() {
+  installMorningMessageTrigger();
+  installDailyReminderTrigger();
+  installWeeklyReviewTrigger();
+  installCleanupTrigger();
+  auditProjectTriggers();
+}
+
+/**
  * 汎用冪等ロック。fullKey に対応する ScriptProperties フラグが立っていなければ fn を実行し、
  * 実行後にフラグを立てる。重複実行（トリガー多重起動・手動実行の競合）を防止する。
  * キーの命名規則:
@@ -190,8 +270,8 @@ function withLock_(fullKey, fn) {
 }
 
 /**
- * 毎朝 MORNING_LINE_HOUR_JST_ 時（JST）に sendMorningMessage を実行するトリガを 1 本だけ設定する。
- * GAS エディタから手動で 1 回実行すること（コードの時刻変更後は再実行が必須）。
+ * 毎朝 sendMorningMessage 用の時間主導トリガを **1 本だけ**設定する（JST = TZ_）。
+ * GAS エディタから手動で 1 回実行すること（**MORNING_PUSH_* を変えたら再実行が必須**。push だけではトリガは更新されない）。
  */
 function installMorningMessageTrigger() {
   var triggers = ScriptApp.getProjectTriggers();
@@ -207,15 +287,40 @@ function installMorningMessageTrigger() {
   ScriptApp.newTrigger('sendMorningMessage')
     .timeBased()
     .everyDays(1)
-    .atHour(MORNING_LINE_HOUR_JST_)
-    .nearMinute(0)
+    .atHour(MORNING_PUSH_HOUR_JST_)
+    .nearMinute(MORNING_PUSH_NEAR_MINUTE_JST_)
     .inTimezone(TZ_)
     .create();
-  Logger.log('[installMorningMessageTrigger] 朝' + MORNING_LINE_HOUR_JST_ + '時トリガを登録しました。');
+  Logger.log(
+    '[installMorningMessageTrigger] 登録: JST ' +
+      MORNING_PUSH_HOUR_JST_ +
+      ':' +
+      (MORNING_PUSH_NEAR_MINUTE_JST_ < 10 ? '0' : '') +
+      MORNING_PUSH_NEAR_MINUTE_JST_ +
+      ' 付近（15 分窓・遅延は SPEC §1.1.1） sendMorningMessage'
+  );
+  assertMorningTriggerCountOne_();
 }
 
 /**
- * 朝の定刻（MORNING_LINE_HOUR_JST_ JST）に送る「今日の始まり」LINE メッセージ。
+ * 朝トリガ登録直後の検証: sendMorningMessage 用がちょうど 1 本であることをログする（重複・取り逃しの早期発見）。
+ * @private
+ */
+function assertMorningTriggerCountOne_() {
+  var triggers = ScriptApp.getProjectTriggers();
+  var n = 0;
+  for (var i = 0; i < triggers.length; i++) {
+    if (triggers[i].getHandlerFunction() === 'sendMorningMessage') n++;
+  }
+  if (n !== 1) {
+    Logger.log('[installMorningMessageTrigger] WARNING: sendMorningMessage トリガ本数=' + n + '（期待 1）。エディタのトリガ画面を確認してください。');
+  } else {
+    Logger.log('[installMorningMessageTrigger] OK: sendMorningMessage クロックトリガ 1 本');
+  }
+}
+
+/**
+ * 朝の定刻（MORNING_PUSH_HOUR_JST_ / MORNING_PUSH_NEAR_MINUTE_JST_ ・JST）に送る「今日の始まり」LINE メッセージ。
  * withLock_ で 1 日 1 回だけ実行される。
  * - Gemini は呼ばない（テンプレートのみ）
  * - issueDashToken_ で冪等トークンを発行（夕方と URL を共有）
@@ -227,6 +332,12 @@ function sendMorningMessage() {
 }
 
 function sendMorningMessageImpl_(todayStr) {
+  Logger.log(
+    '[sendMorningMessage] 実行開始 JST=' +
+      Utilities.formatDate(new Date(), TZ_, 'yyyy-MM-dd HH:mm:ss') +
+      ' date=' +
+      todayStr
+  );
   var props = PropertiesService.getScriptProperties();
   var lineToken = props.getProperty('LINE_CHANNEL_ACCESS_TOKEN');
   var userId    = props.getProperty('LINE_USER_ID');
@@ -234,7 +345,7 @@ function sendMorningMessageImpl_(todayStr) {
     throw new Error('LINE_CHANNEL_ACCESS_TOKEN / LINE_USER_ID が未設定です。');
   }
 
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getBoundSpreadsheet_();
 
   // (1) 当日 Daily 行を補完（ensureDailyRowsForToday_ は冪等なので夕方と競合しない）
   try {
@@ -335,7 +446,7 @@ function sendDailyReminder() {
 
 /** sendDailyReminder の実処理（withDailyLock_ 内で 1 日 1 回だけ実行される） */
 function sendDailyReminderImpl_(todayStr) {
-  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var ss = getBoundSpreadsheet_();
   var props = PropertiesService.getScriptProperties();
   var token = props.getProperty('LINE_CHANNEL_ACCESS_TOKEN');
   var userId = props.getProperty('LINE_USER_ID');
@@ -632,9 +743,88 @@ function parseLiffState_(liffState) {
 }
 
 /**
+ * 週次 LIFF 用の不透明オープン ID を発行する（正本は Script Properties）。
+ * @param {string} weekStartJst yyyy-MM-dd（その週の月曜・JST）
+ * @param {string} weekToken issueWeekToken_ が返した週次ダッシュ用トークン
+ * @returns {string} 32 桁 hex（ハイフンなし UUID）
+ * @private
+ */
+function issueWeeklyLiffOpaqueOpen_(weekStartJst, weekToken) {
+  var id = generateDashToken_();
+  var now = Date.now();
+  var ws = String(weekStartJst || '').trim();
+  var tok = String(weekToken || '').trim();
+  var payload = {
+    v: 1,
+    scope: 'weekly',
+    weekStart: ws,
+    token: tok,
+    exp: now + LIFF_OPAQUE_EXP_MS_,
+    iat: now,
+  };
+  PropertiesService.getScriptProperties().setProperty(LIFF_OPAQUE_OPEN_PREFIX_ + id, JSON.stringify(payload));
+  Logger.log('[issueWeeklyLiffOpaqueOpen_] issued oid weekStart=' + ws);
+  return id;
+}
+
+/**
+ * 不透明 oid を解決し、週次 doGet 用の weekStart / token を返す。
+ * @returns {{ ok: true, weekStart: string, token: string } | { ok: false, error: string }}
+ * @private
+ */
+function resolveLiffOpaqueWeeklyOpen_(oid) {
+  var id = String(oid || '')
+    .trim()
+    .replace(/-/g, '');
+  if (!/^[0-9a-f]{32}$/i.test(id)) {
+    return { ok: false, error: 'open_invalid' };
+  }
+  var raw = PropertiesService.getScriptProperties().getProperty(LIFF_OPAQUE_OPEN_PREFIX_ + id);
+  if (!raw) {
+    return { ok: false, error: 'open_not_found' };
+  }
+  var o;
+  try {
+    o = JSON.parse(raw);
+  } catch (e) {
+    return { ok: false, error: 'open_invalid' };
+  }
+  if (!o || o.v !== 1 || o.scope !== 'weekly') {
+    return { ok: false, error: 'open_invalid' };
+  }
+  var ws = String(o.weekStart || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(ws)) {
+    return { ok: false, error: 'open_invalid' };
+  }
+  var tok = String(o.token || '').trim();
+  if (!tok) {
+    return { ok: false, error: 'open_invalid' };
+  }
+  var exp = Number(o.exp);
+  if (!isNaN(exp) && exp > 0 && Date.now() > exp) {
+    return { ok: false, error: 'open_expired' };
+  }
+  return { ok: true, weekStart: ws, token: tok };
+}
+
+/**
+ * oid 解決失敗時のユーザー向け短文（週次 token 文言とは別系統）。
+ * @private
+ */
+function weeklyLiffOpenResolvErrorHint_(code) {
+  if (code === 'open_expired') {
+    return '週次の振り返りリンクの有効期限が切れています。最新の週次 LINE の「振り返り」から開いてください。';
+  }
+  if (code === 'open_not_found') {
+    return '振り返りリンクが見つかりません。最新の週次 LINE の「振り返り」から開いてください。';
+  }
+  return weeklyTokenErrorHtmlHint_('invalid_token');
+}
+
+/**
  * doGet のクエリと LIFF の liff.state を一箇所でマージする。
  * 同一キーは e.parameter（アドレスバー直下のクエリ）を liff.state より優先する。
- * @returns {{ date: string, weekStart: string, token: string, format: string, liffState: string }}
+ * @returns {{ date: string, weekStart: string, token: string, format: string, liffState: string, yw: string, oid: string }}
  * @private
  */
 function parseWebAppQuery_(e) {
@@ -656,6 +846,12 @@ function parseWebAppQuery_(e) {
     token: pick_(p.token != null && p.token !== undefined ? p.token : '', st.token),
     format: fmtTop || fmtSt || '',
     liffState: liffState,
+    /** 週次 LIFF 意図（LINE 本文 URL に yw=1 を付与。weekStart 欠落時に日次へ落とさない） */
+    yw: pick_(p.yw, st.yw),
+    /** 週次不透明オープン ID（weekStart/token のサーバー正本へ解決） */
+    oid: pick_(p.oid, st.oid),
+    /** 診断用: 最新デプロイかどうかを HTTP GET だけで判定する */
+    ping: pick_(p.ping, st.ping),
   };
 }
 
@@ -666,6 +862,103 @@ function parseWebAppQuery_(e) {
  */
 function liffHtmlOutput_(html) {
   return HtmlService.createHtmlOutput(html).setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+/**
+ * &lt;script&gt; 内にそのまま埋め込める JSON リテラル（&lt;/script&gt; 断ち・HTML パーサ干渉を避ける）。
+ * @param {*} obj JSON.stringify 可能な値
+ * @returns {string}
+ * @private
+ */
+function jsonLiteralForScriptTag_(obj) {
+  if (obj === null || obj === undefined) return 'null';
+  return JSON.stringify(obj).replace(/</g, '\\u003c');
+}
+
+/**
+ * コンテナバインドのスプレッドシートを取得する。
+ * ウェブアプリ・google.script.run で getActiveSpreadsheet が取れない場合は Script Properties の
+ * BOUND_SPREADSHEET_ID で openById する。Active が取れたときは ID をプロパティにキャッシュする。
+ * @returns {GoogleAppsScript.Spreadsheet.Spreadsheet}
+ * @private
+ */
+function getBoundSpreadsheet_() {
+  var props = PropertiesService.getScriptProperties();
+  var ss = null;
+  try {
+    ss = SpreadsheetApp.getActiveSpreadsheet();
+  } catch (e) {
+    Logger.log('[getBoundSpreadsheet_] getActiveSpreadsheet 例外: ' + String(e));
+  }
+  if (ss) {
+    try {
+      var id = ss.getId();
+      var prev = props.getProperty(BOUND_SPREADSHEET_ID_KEY_);
+      if (prev !== id) {
+        props.setProperty(BOUND_SPREADSHEET_ID_KEY_, id);
+        Logger.log('[getBoundSpreadsheet_] ' + BOUND_SPREADSHEET_ID_KEY_ + ' を更新');
+      }
+    } catch (e2) {
+      Logger.log('[getBoundSpreadsheet_] ID キャッシュ失敗（無視）: ' + String(e2));
+    }
+    return ss;
+  }
+  var sid = (props.getProperty(BOUND_SPREADSHEET_ID_KEY_) || '').trim();
+  if (!sid) {
+    throw new Error(
+      'スプレッドシートを取得できません（ウェブアプリ等で Active が無い状態です）。' +
+        'スプレッドシートから本スクリプトを開き ensureSpreadsheetBinding を 1 回実行するか、' +
+        'Script Properties に ' +
+        BOUND_SPREADSHEET_ID_KEY_ +
+        ' をスプレッドシートの ID で設定してください。'
+    );
+  }
+  return SpreadsheetApp.openById(sid);
+}
+
+/**
+ * スプレッドシートを開いた状態で GAS エディタから 1 回実行し、BOUND_SPREADSHEET_ID を保存する。
+ * LIFF / ウェブアプリで getActiveSpreadsheet が無いときのフォールバック用。
+ */
+function ensureSpreadsheetBinding() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  if (!ss) throw new Error('スプレッドシートを開いたうえで実行してください。');
+  PropertiesService.getScriptProperties().setProperty(BOUND_SPREADSHEET_ID_KEY_, ss.getId());
+  Logger.log('[ensureSpreadsheetBinding] ' + BOUND_SPREADSHEET_ID_KEY_ + '=' + ss.getId());
+}
+
+/**
+ * 週次 LIFF 専用クエリ yw=1（LINE 本文 URL に付与）が付いているか。
+ * @private
+ */
+function isWeeklyLiffIntent_(q) {
+  var yw = String(q && q.yw != null ? q.yw : '')
+    .trim()
+    .toLowerCase();
+  return yw === '1' || yw === 'true' || yw === 'yes';
+}
+
+/**
+ * 週次意図（yw=1）だが weekStart が欠けたときの案内 HTML（日次トークン検証に落とさない）。
+ * @private
+ */
+function weeklyLiffParamsMissingHtml_() {
+  var body =
+    '<p style="margin:16px;font-size:15px;line-height:1.7;color:#1E293B;">' +
+    '週次ページ用の情報が足りません（<code>weekStart</code> がありません）。' +
+    '</p>' +
+    '<p style="margin:16px;font-size:14px;line-height:1.7;color:#475569;">' +
+    '<strong>対処:</strong> 最新の週次 LINE（<span style="white-space:nowrap;">【やったかい週次】</span>）の' +
+    '<strong>「振り返り」</strong>リンクから開き直してください。' +
+    ' LIFF のエンドポイント URL だけをブックマークしていると表示できません。' +
+    '</p>';
+  return (
+    '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+    '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' +
+    '<title>やったかい 週次</title></head><body style="font-family:system-ui,sans-serif;background:#fafafa;">' +
+    body +
+    '</body></html>'
+  );
 }
 
 /**
@@ -699,9 +992,80 @@ function doGet(e) {
   var q = parseWebAppQuery_(e);
   var tz = TZ_;
 
+  // 診断: デプロイ識別子と、どのクエリが見えているか
+  try {
+    Logger.log('[doGet] marker=' + DEPLOY_MARKER_ + ' q=' + JSON.stringify(q));
+  } catch (eLog) {}
+
+  // 診断: 最新デプロイ判定・LIFF/LINE 経由のクエリ可視化
+  // 例: <webapp-url>?ping=1
+  if (String(q.ping || '').trim() === '1') {
+    return jsonOutput_({
+      ok: true,
+      marker: DEPLOY_MARKER_,
+      now_jst: Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd HH:mm:ss'),
+      q: q,
+      raw_parameter: e && e.parameter ? e.parameter : {},
+    });
+  }
+
   var rawDate = q.date;
   var format = q.format;
   var tokenParam = q.token;
+
+  // 不透明 oid: LIFF 経由で weekStart/token が欠落してもサーバー正本で週次へルーティング（日次 token 検証に落とさない）
+  var oidRaw = String(q.oid || '')
+    .trim()
+    .replace(/-/g, '');
+  if (oidRaw && /^[0-9a-f]{32}$/i.test(oidRaw)) {
+    Logger.log('[doGet] route=weekly_by_oid oid=' + oidRaw);
+    var opened = resolveLiffOpaqueWeeklyOpen_(oidRaw);
+    if (opened.ok === true) {
+      Logger.log('[doGet] oid_resolved weekStart=' + opened.weekStart);
+      return doGetWeekly_(opened.weekStart, opened.token, format);
+    }
+    if (format === 'json') {
+      return jsonOutput_({
+        ok: false,
+        error: opened.error || 'open_invalid',
+        week_start: opened.weekStart || '',
+      });
+    }
+    return liffHtmlOutput_(
+      '<!DOCTYPE html><html><head><meta charset="UTF-8">' +
+        '<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">' +
+        '<title>やったかい 週次</title></head><body style="font-family:system-ui,sans-serif;background:#fafafa;">' +
+        '<p style="margin:16px;line-height:1.7;color:#1E293B;">' +
+        escapeHtml_(weeklyLiffOpenResolvErrorHint_(opened.error)) +
+        '</p></body></html>'
+    );
+  }
+
+  /**
+   * LIFF が weekStart / oid / yw を落として token だけ残すと、日次分岐で「今日」と照合され invalid_token になる。
+   * トークンが「今日を含む週の月曜」に紐づく週次トークンなら、そのまま週次へ（sendWeeklyReview が発行した週と一致する）。
+   */
+  if (!String(q.weekStart || '').trim() && tokenParam) {
+    var todayJstFb = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
+    var wsFb = mostRecentMondayJst_(todayJstFb);
+    var gateW = assertWeeklyToken_(wsFb, tokenParam);
+    if (gateW.ok) {
+      Logger.log('[doGet] LIFF フォールバック: weekStart 欠落を週次トークンで補い weekStart=' + wsFb);
+      return doGetWeekly_(wsFb, tokenParam, format);
+    }
+  }
+
+  // 週次 LIFF（LINE で yw=1 を付与）なのに weekStart が欠けた場合、日次トークン検証に落ちない
+  if (isWeeklyLiffIntent_(q) && !String(q.weekStart || '').trim()) {
+    if (format === 'json') {
+      return jsonOutput_({
+        ok: false,
+        error: 'weekly_params_incomplete',
+        message: 'weekStart が必要です。最新の週次 LINE の「振り返り」リンクから開いてください。',
+      });
+    }
+    return liffHtmlOutput_(weeklyLiffParamsMissingHtml_());
+  }
 
   // weekStart があれば週次（§5.7.3 W-8）。日次 date より先に判定する。
   if (q.weekStart) {
@@ -731,12 +1095,18 @@ function doGet(e) {
 
   var ss;
   try {
-    ss = SpreadsheetApp.getActiveSpreadsheet();
+    ss = getBoundSpreadsheet_();
   } catch (err) {
     if (format === 'json') {
       return jsonOutput_({ ok: false, error: 'no_spreadsheet', message: String(err.message || err) });
     }
-    return htmlMessage_('スプレッドシートを取得できません。コンテナバインドでデプロイしてください。', dateStr, format, null, tokenParam);
+    return htmlMessage_(
+      'スプレッドシートを取得できません。コンテナバインドでデプロイするか、スプレッドシートから ensureSpreadsheetBinding を 1 回実行してください。',
+      dateStr,
+      format,
+      null,
+      tokenParam
+    );
   }
 
   var todayStr = Utilities.formatDate(new Date(), tz, 'yyyy-MM-dd');
@@ -801,7 +1171,7 @@ function getDashboardJsonForClient(dateStr, clientToken) {
   }
   var ss;
   try {
-    ss = SpreadsheetApp.getActiveSpreadsheet();
+    ss = getBoundSpreadsheet_();
   } catch (err) {
     return { ok: false, error: 'no_spreadsheet', message: String(err.message || err) };
   }
@@ -903,7 +1273,7 @@ function updateTaskStatus(dateStr, clientToken, taskId, newStatus) {
   }
 
   try {
-    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var ss = getBoundSpreadsheet_();
     var dailySheet = ss.getSheetByName('Daily');
     if (!dailySheet) return { ok: false, error: 'NO_DAILY_SHEET' };
 
@@ -939,18 +1309,13 @@ function updateTaskStatus(dateStr, clientToken, taskId, newStatus) {
       return { ok: false, error: 'TASK_NOT_FOUND' };
     }
 
-    // キャッシュを無効化 → 高速再ビルド → キャッシュに書き戻す（次回 LIFF アクセスを高速化）
+    // キャッシュ無効化 → 高速再ビルド（section2 は skipSection2:true で Gemini 呼び出し省略）
+    // 注: skipSection2:true の結果はキャッシュに書かない。
+    //     section2:null がキャッシュに残ると次回ページリロード時にキャラクター会話が消えるため。
+    //     次の doGet/getDashboardJsonForClient 呼び出しはキャッシュミスし、完全なデータを再構築する。
     invalidateDashboardCache_(d);
     var model = buildDailyDashboardModel_(ss, d, tz, { skipSection2: true });
-    var pub = toPublicDashboardJson_(model);
-    if (pub.ok) {
-      try {
-        CacheService.getScriptCache().put(CACHE_KEY_PREFIX_ + d, JSON.stringify(pub), CACHE_TTL_SEC_);
-      } catch (ce) {
-        Logger.log('[updateTaskStatus] キャッシュ書き戻し失敗（無視）: ' + String(ce));
-      }
-    }
-    return pub;
+    return toPublicDashboardJson_(model);
   } finally {
     lock.releaseLock();
   }
@@ -977,7 +1342,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
 
   // model（public JSON）が渡されていればクライアントに埋め込む → 2往復目の RPC をゼロにする
   // model は toPublicDashboardJson_ の結果（ok, date, tasks, categories, section2 等を含む）
-  var bakedJson = (model && model.ok) ? JSON.stringify(model) : 'null';
+  var bakedJson = (model && model.ok) ? jsonLiteralForScriptTag_(model) : 'null';
 
   var css = [
     // iOS/Android セーフエリア対応（ノッチ・ホームバー）と和文フォントスタック
@@ -989,7 +1354,8 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '.top{text-align:center;padding:16px 0 6px;}',
     '.dlbl{font-size:12px;color:#94A3B8;margin:0 0 2px;letter-spacing:.04em;}',
     '.mlbl{font-size:15px;font-weight:700;color:#1E293B;margin:0;}',
-    '.donut-wrap{display:flex;justify-content:center;padding:8px 0 4px;}',
+    '@keyframes donutIn{from{opacity:0;transform:scale(0.96);}to{opacity:1;transform:scale(1);}}',
+    '.donut-wrap{display:flex;justify-content:center;padding:8px 0 4px;animation:donutIn .18s ease-out;}',
     '.donut-svg{width:160px;height:160px;}',
     '.dpct{font-size:30px;font-weight:900;fill:#1E293B;dominant-baseline:middle;text-anchor:middle;}',
     '.clbl{text-align:center;font-size:12px;color:#64748B;margin:2px 0 16px;}',
@@ -1024,7 +1390,9 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '.toast.show{opacity:1;}',
     '.sec2{background:#fff;border:1px solid #E2E8F0;border-radius:12px;padding:14px 16px;margin-top:4px;}',
     '.qt{font-size:14px;font-weight:700;color:#1E293B;margin:0 0 4px;line-height:1.6;}',
-    '.qa{font-size:11px;color:#94A3B8;margin:0 0 10px;}',
+    '.qa{font-size:11px;color:#94A3B8;margin:0 0 6px;}',
+    '.qm-h{font-size:11px;font-weight:700;color:#64748B;margin:10px 0 4px;letter-spacing:.04em;}',
+    '.qm{font-size:13px;color:#334155;margin:0 0 12px;line-height:1.65;white-space:pre-wrap;word-break:break-word;}',
     '.ch{display:flex;align-items:flex-start;gap:10px;margin:10px 0;}',
     '.ch.r{flex-direction:row-reverse;}',
     '.av{width:64px;height:64px;min-width:64px;border-radius:50%;overflow:hidden;flex-shrink:0;background:#E2E8F0;}',
@@ -1039,7 +1407,7 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
 
   var js = [
     '(function(){',
-    'var D=' + defaultDateJson + ',T=' + defaultTokenJson + ',AV=' + JSON.stringify(avatarBaseUrl) + ',NS="http://www.w3.org/2000/svg";',
+    'var D=' + defaultDateJson + ',T=' + defaultTokenJson + ',AV=' + jsonLiteralForScriptTag_(avatarBaseUrl) + ',NS="http://www.w3.org/2000/svg";',
     // サーバーが埋め込んだ初期データ。非 null のときは google.script.run を呼ばず即描画する
     'var __D__=' + bakedJson + ';',
     'var root=document.getElementById("app"),stEl=document.getElementById("st");',
@@ -1051,20 +1419,41 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     'function sa(el,k,v){el.setAttribute(k,v);}',
     // Color sanitizer
     'function sc(c){var s=String(c||"#94A3B8").trim();return/^(#[0-9a-fA-F]{3,8}|rgb[a]?\\([^)]*\\)|[a-zA-Z]{2,30})$/.test(s)?s:"#94A3B8";}',
-    // Donut SVG builder (§3.5: segment = category task-count share)
+    // Donut SVG builder — §3.5: segment = category task-count share
+    // 実装方針:
+    //   stroke-dasharray によるセグメント分割を廃止し、SVG <path> Arc コマンドで直接描画。
+    //   → 重なった dashed-circle が生むアンチエイリアシング seam（グレー漏れ）を根絶。
+    //   Layer-1: グレー背景 <circle>（total=0 でも円の輪郭が見える）
+    //   Layer-2: 各カテゴリを <path fill=色> のドーナツスライスで描画（stroke なし・seam なし）
+    //   360° 単一セグメントは degenerate SVG arc 回避のため <circle stroke=色> にフォールバック。
     'function mkDonut(cats,total,pct){',
+    '  var OUR=76,INN=48,CX=90,CY=90;',
     '  var wrap=document.createElement("div");wrap.className="donut-wrap";wrap.id="donut-wrap";',
-    '  var svg=svgE("svg");sa(svg,"viewBox","0 0 180 180");sa(svg,"class","donut-svg");',
-    '  var circ=2*Math.PI*62,cum=0;',
-    '  if(total>0&&cats&&cats.length){',
-    '    for(var i=0;i<cats.length;i++){var cat=cats[i],sh=cat.total/total;',
-    '      var c=svgE("circle");sa(c,"cx","90");sa(c,"cy","90");sa(c,"r","62");sa(c,"fill","none");',
-    '      sa(c,"stroke",sc(cat.color));sa(c,"stroke-width","28");',
-    '      sa(c,"stroke-dasharray",(sh*circ).toFixed(2)+" "+circ.toFixed(2));',
-    '      sa(c,"stroke-dashoffset",(circ*(0.25-cum)).toFixed(2));',
-    '      svg.appendChild(c);cum+=sh;}',
-    '  }else{var bg=svgE("circle");sa(bg,"cx","90");sa(bg,"cy","90");sa(bg,"r","62");',
-    '    sa(bg,"fill","none");sa(bg,"stroke","#E2E8F0");sa(bg,"stroke-width","28");svg.appendChild(bg);}',
+    '  var svg=svgE("svg");sa(svg,"viewBox","0 0 180 180");sa(svg,"class","donut-svg");sa(svg,"role","img");sa(svg,"aria-label","達成率 "+String(pct||0)+"パーセント");',
+    '  var bg=svgE("circle");sa(bg,"cx","90");sa(bg,"cy","90");sa(bg,"r","62");',
+    '  sa(bg,"fill","none");sa(bg,"stroke","#E2E8F0");sa(bg,"stroke-width","28");svg.appendChild(bg);',
+    '  function pt(r,deg){var rad=(deg-90)*Math.PI/180;return[CX+r*Math.cos(rad),CY+r*Math.sin(rad)];}',
+    '  function arcPath(a0,a1){var po=pt(OUR,a0),qo=pt(OUR,a1),pi=pt(INN,a0),qi=pt(INN,a1);',
+    '    var lg=(((a1-a0)%360)+360)%360>180?1:0;',
+    '    var d="M "+po[0]+" "+po[1]+" A "+OUR+" "+OUR+" 0 "+lg+" 1 "+qo[0]+" "+qo[1];',
+    '    d+=" L "+qi[0]+" "+qi[1]+" A "+INN+" "+INN+" 0 "+lg+" 0 "+pi[0]+" "+pi[1]+" Z";',
+    '    return d;}',
+    '  var segs=[];if(total>0&&cats&&cats.length){for(var i=0;i<cats.length;i++){if((cats[i].done||0)>0)segs.push(cats[i]);}}',
+    '  if(segs.length>0){',
+    '    var cum=0,usedDeg=0,n=segs.length,GAP=n>1?1.5:0;',
+    '    var td0=0;for(var k=0;k<n;k++)td0+=(segs[k].done||0);',
+    '    var totalDeg=total>0?(td0/total)*360:0;',
+    '    for(var i=0;i<n;i++){var cat=segs[i];',
+    '      var sh=cat.done/total;',
+    '      var deg=(i===n-1)?Math.max(0,totalDeg-usedDeg):sh*360;',
+    '      usedDeg+=deg;',
+    '      var a0=cum+GAP/2,a1=cum+deg-GAP/2,el;',
+    '      if(deg>=359.999){',
+    '        el=svgE("circle");sa(el,"cx","90");sa(el,"cy","90");sa(el,"r","62");',
+    '        sa(el,"fill","none");sa(el,"stroke",sc(cat.color));sa(el,"stroke-width","28");',
+    '      }else if(a1>a0){el=svgE("path");sa(el,"d",arcPath(a0,a1));sa(el,"fill",sc(cat.color));}',
+    '      if(el)svg.appendChild(el);cum+=deg;}',
+    '  }',
     '  var t=svgE("text");sa(t,"x","90");sa(t,"y","90");sa(t,"class","dpct");t.textContent=String(pct||0)+"%";',
     '  svg.appendChild(t);wrap.appendChild(svg);return wrap;',
     '}',
@@ -1173,6 +1562,8 @@ function htmlMessage_(message, dateStr, format, model, tokenStr) {
     '  sec.appendChild(h("h2","今日の一言"));',
     '  sec.appendChild(h("p","「"+(s2.quote||"")+"」","qt"));',
     '  if(s2.quote_attribution)sec.appendChild(h("p",s2.quote_attribution,"qa"));',
+    '  var qm0=(s2.quote_meaning||"").trim();',
+    '  if(qm0){sec.appendChild(h("p","意味","qm-h"));sec.appendChild(h("p",qm0,"qm"));}',
     // mkChar: name, text, imgFile, isRight
     '  function mkChar(name,text,imgFile,isRight){',
     '    var row=document.createElement("div");row.className="ch"+(isRight?" r":"");',
@@ -1238,43 +1629,123 @@ function escapeHtml_(s) {
 }
 
 /**
+ * LINE 用に meaning の先頭を短く切り出す（§6.2: 全文は LIFF の quote_meaning に任せる）。
+ * 改行は最初の行のみ。長すぎる場合は読点・句点で手前を優先し、末尾に …。
+ * @param {string} meaning
+ * @param {number} maxLen 目安文字数（全角含む）
+ * @returns {string}
+ */
+function meaningSnippetForLine_(meaning, maxLen) {
+  var lim = maxLen > 8 ? maxLen : 72;
+  var s = String(meaning || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .trim();
+  if (!s) return '';
+  var line = String(s.split('\n')[0] || '').trim();
+  if (!line) return '';
+  if (line.length <= lim) return line;
+  var cut = line.slice(0, lim - 1);
+  var punct = Math.max(cut.lastIndexOf('。'), cut.lastIndexOf('、'));
+  if (punct >= Math.floor(lim * 0.45)) {
+    cut = cut.slice(0, punct + 1);
+  }
+  cut = cut.replace(/[、，\s]+$/, '');
+  return cut + '…';
+}
+
+/**
+ * ■2 セリフに運用語・不自然な連語が紛れ込んだ場合に true（Gemini 失敗扱いでテンプレへ）。
+ * 禁止語は SECTION2_JP_RULES_ と整合させること。
+ */
+function section2JpStyleViolates_(ichisan, hiroko) {
+  var t = String(ichisan || '') + '\n' + String(hiroko || '');
+  var banned = [
+    '意味欄',
+    '腹を合わせ',
+    'リンクして',
+    'ダッシュボード',
+    'quote_meaning',
+    'Quotes の',
+    'DTO',
+    'LIFF',
+  ];
+  for (var i = 0; i < banned.length; i++) {
+    if (t.indexOf(banned[i]) >= 0) return true;
+  }
+  return false;
+}
+
+/**
+ * Quotes シートから指定日に対応する 1 件分の名言バンドルを返す（決定論的）。
+ * meaning はシート列が正本。LIFF では dto.quote_meaning にそのまま載せる。
+ * @param {GoogleAppsScript.Spreadsheet.Sheet|null} quotesSheet
+ * @param {string} todayStr yyyy-MM-dd
+ * @returns {{ text: string, attribution: string, meaning: string }}
+ */
+function pickQuoteBundleForDate_(quotesSheet, todayStr) {
+  var quotes = quotesSheet ? loadActiveQuotes_(quotesSheet) : [];
+  if (quotes.length > 0) {
+    var idx = dayHash_(todayStr) % quotes.length;
+    var q = quotes[idx];
+    return {
+      text: q.text,
+      attribution: q.attribution || '',
+      meaning: typeof q.meaning === 'string' ? q.meaning.trim() : String(q.meaning || '').trim(),
+    };
+  }
+  return {
+    text: finalFallbackQuoteText_(),
+    attribution: '',
+    meaning: '',
+  };
+}
+
+/**
  * §6.1 / §6.2: ■2 生成のオーケストレーター（Gemini 優先 → 失敗時テンプレフォールバック）。
- * Quotes から名言を決定的に 1 件取得し、Gemini のプロンプト参照 + テンプレ両方で共用。
+ * pickQuoteBundleForDate_ で Quotes から 1 件選び、meaning を Gemini・テンプレ・DTO に共通供給する。
  * 個人タスク全文はプロンプトに載せない（SPEC §6.1 方針）。
  * 戻り値: { dto, textBlock }
  */
 function buildSection2_(ss, todayStr, achievementPercent, moodMessage) {
   var quotesSheet = ss.getSheetByName('Quotes');
-  var quotes = quotesSheet ? loadActiveQuotes_(quotesSheet) : [];
-  var quoteText, attribution;
-  if (quotes.length > 0) {
-    var idx = dayHash_(todayStr) % quotes.length;
-    quoteText = quotes[idx].text;
-    attribution = quotes[idx].attribution || '';
-  } else {
-    quoteText = finalFallbackQuoteText_();
-    attribution = '';
-  }
+  var bundle = pickQuoteBundleForDate_(quotesSheet, todayStr);
+  var quoteText = bundle.text;
+  var attribution = bundle.attribution;
+  var meaningSheet = bundle.meaning;
 
-  // §6.1: Gemini 試行
-  var geminiResult = callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribution);
+  // §6.1: Gemini 試行（シートの meaning はプロンプトに渡し、DTO の quote_meaning は常にシート由来）
+  var geminiResult = callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribution, meaningSheet);
   if (geminiResult.ok) {
     Logger.log('[section2] Gemini 成功');
+    geminiResult.dto.quote_meaning = meaningSheet;
     return buildSection2DtoAndBlock_(geminiResult.dto, '（Gemini）');
   }
 
-  // §6.2: テンプレフォールバック
+  // §6.2: テンプレフォールバック（LINE 本文に meaning 全文は載せず、LIFF の quote_meaning で表示）
   Logger.log('[section2] Gemini 失敗 → テンプレ経路 reason=' + (geminiResult.error || 'unknown'));
   var avatars = pickAvatarsByPercent_(achievementPercent);
+  var meaningSnippet = meaningSnippetForLine_(meaningSheet, 72);
   var vars = {
     quote: quoteText,
     achievement_percent: String(achievementPercent),
     mood_message: moodMessage,
     attribution: attribution,
+    meaning: meaningSheet,
+    meaning_snippet: meaningSnippet,
   };
-  // §5.1 フォロートーン: 達成率の数値をセリフ冒頭で突き付けない。今日への励ましを軸にする。
-  var ichisanTpl = '「{{quote}}」という言葉を胸に刻んでおくんじゃ、ヒロ子ちゃん。ワシも共に見守っておるぞ。';
-  var hirokoTpl = '「{{quote}}」か〜、マジ刺さるじゃん！今日まだ時間あるし、あたし動くっしょ！';
+  var ichisanTpl;
+  var hirokoTpl;
+  // 解説が登録されていても先頭行が空なら「解説なし」と同じテンプレに寄せる（quote_meaning はシート正本のまま）
+  if (meaningSheet && meaningSnippet) {
+    ichisanTpl =
+      '「{{quote}}」、ワシの読みでは「{{meaning_snippet}}」が本丸じゃ。今日の合言葉は「{{mood_message}}」。その気持ちとも筋が通っておる。小さく一歩、進むんじゃよ、ヒロ子ちゃん。';
+    hirokoTpl =
+      '説明まで読んでマジ腑に落ちた！今日の「{{mood_message}}」とも空気合うじゃん。よし、あたし動くわ！';
+  } else {
+    ichisanTpl = '「{{quote}}」という言葉を胸に刻んでおくんじゃ、ヒロ子ちゃん。ワシも共に見守っておるぞ。';
+    hirokoTpl = '「{{quote}}」か〜、マジ刺さるじゃん！今日まだ時間あるし、あたし動くっしょ！';
+  }
   var ichisanText = substituteTemplate_(ichisanTpl, vars);
   var hirokoText = substituteTemplate_(hirokoTpl, vars);
   // 補間後バリデーション（§6.2.1）: 未置換プレースホルダー・空文字は即フォールバック
@@ -1289,6 +1760,7 @@ function buildSection2_(ss, todayStr, achievementPercent, moodMessage) {
   var dto = {
     quote: quoteText,
     quote_attribution: attribution,
+    quote_meaning: meaningSheet,
     ichisan: ichisanText,
     hiroko: hirokoText,
     ichisan_image: avatars.ichisan_image,
@@ -1297,7 +1769,10 @@ function buildSection2_(ss, todayStr, achievementPercent, moodMessage) {
   return buildSection2DtoAndBlock_(dto, '（テンプレ）');
 }
 
-/** dto から LINE 用テキストブロックを組み立てるヘルパー */
+/**
+ * dto から LINE 用テキストブロックを組み立てるヘルパー。
+ * quote_meaning の全文は LIFF のみ（LINE はセリフ中心で長文化を避ける）。
+ */
 function buildSection2DtoAndBlock_(dto, sourceLbl) {
   // 経路ラベル（テンプレ/Gemini）はログのみ。LINE 本文には出さない（§1.3.1）
   Logger.log('[section2] route=' + (sourceLbl || ''));
@@ -1332,23 +1807,45 @@ var CHAR_VOICE_RULES_ = [
 ].join('\n');
 
 /**
+ * ■2 の日本語品質ルール（Gemini プロンプトとテンプレ文面の両方の基準）。
+ * UI・運用内部語をセリフに出さず、比喩は聞き手が追える言い回しに落とす。
+ */
+var SECTION2_JP_RULES_ = [
+  '【■2 文章品質（イチ・ヒロ子のセリフ共通・必須）】',
+  '・運用・画面の内部名を口に出さない（禁止例: 意味欄、リンク、ダッシュボード、Quotes、シート、DTO、LIFF、quote_meaning）',
+  '・「腹を合わせて」のようなあいまいな連語は使わない（足並みを揃える・同じ方向を向く、など具体語へ）',
+  '・目的語のない「積む」は使わない（「経験を積む」のように目的語を添えるか、「一歩ずつ進む」「一歩踏み出す」に言い換える）',
+  '・「意味欄の芯」など、見えない内部構造を指す比喩は禁止。言葉の趣旨・肝・読み、と聞き手の体験に寄せる',
+  '・登録済みの解説があるときはその趣旨に沿う。解説全文は別画面でも見えるため、セリフで全文を繰り返さず要点に触れる',
+].join('\n');
+
+/**
  * §6.1: Gemini API で ■2 を生成。
  * 失敗時（キー未設定 / タイムアウト / HTTP エラー / JSON 不正 / 必須キー欠落）は
  * { ok: false, error } を返し、呼び出し元（buildSection2_）がテンプレに切り替える。
  *
  * スクリプトプロパティ: GEMINI_API_KEY（未設定なら即テンプレフォールバック）
  * プロンプトに個人タスク名・プライベート情報は含めない。
+ * quoteMeaning は Quotes シートの meaning 列（運用者が登録した固定文）。矛盾する解釈は禁止。
  */
-function callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribution) {
+function callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribution, quoteMeaning) {
   var apiKey = (PropertiesService.getScriptProperties().getProperty('GEMINI_API_KEY') || '').trim();
   if (!apiKey) return { ok: false, error: 'api_key_not_set' };
 
   var quoteRef = '「' + quoteText + '」' + (attribution ? '（' + attribution + '）' : '');
+  var meaningTrim = String(quoteMeaning || '').trim();
+  var meaningBlock = meaningTrim
+    ? '  運用で登録した名言の解説（正本。これと矛盾する言い換えは禁止。セリフに全文を丸写ししない）:\n  ' +
+        meaningTrim.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').join('\n  ')
+    : '  （解説文は未登録。参考名言の一般的な理解の範囲で述べよ）';
+
   var prompt = [
-    'あなたはキャラクター対話の生成AIです。以下の口調ルールを一字一句厳守してセリフを書いてください。',
-    '口調ルールに違反したセリフは絶対に出力しないでください。',
+    'あなたはキャラクター対話の生成AIです。以下の口調ルールと文章品質ルールを厳守してセリフを書いてください。',
+    'いずれかに違反したセリフは絶対に出力しないでください。',
     '',
     CHAR_VOICE_RULES_,
+    '',
+    SECTION2_JP_RULES_,
     '',
     '▼ イチさんの口調 NG 例（絶対に使わない）:',
     '  NG: 「焦らず、まずは一歩踏み出すことが大切だよ」→ 「だよ」禁止',
@@ -1357,15 +1854,26 @@ function callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribu
     '  OK: 「焦りは禁物じゃ。まず一歩、踏み出すんじゃよ、ヒロ子ちゃん」',
     '  OK: 「ワシの経験上、こういうときこそ守りを固めるんじゃ」',
     '',
+    '▼ 日本語の NG 例（■2 品質・絶対に使わない）:',
+    '  NG: 「意味欄に書いてある芯を、ワシの口で言うなら」→ 内部構造の比喩禁止',
+    '  NG: 「今日のメッセージとも腹を合わせて、一歩ずつ積む」→ あいまいな連語・目的語のない「積む」禁止',
+    '  NG: 「リンクしてるっしょ」「Quotes の」→ 運用・UI 用語禁止',
+    '  OK: 「ワシの読みでは、この言葉の趣旨は〜じゃ。今日のメッセージの気持ちとも筋が通っておる」',
+    '',
     '今日の状況（これだけを使うこと・個人情報は含まない）:',
     '  達成率: ' + achievementPercent + '%',
     '  今日のメッセージ: 「' + moodMessage + '」',
     '  参考名言: ' + quoteRef,
     '',
+    meaningBlock,
+    '',
     'ルール:',
     '  - 各セリフは 1〜2 文（短め・簡潔に）',
     '  - 個人のタスク名・プライベート情報は出力しない',
     '  - イチさんは必ず「ワシ」を使い、語尾は必ず「〜じゃ／〜じゃな／〜のじゃ」で終わること',
+    '  - 解説文が登録されているとき: その趣旨と矛盾しないこと。要点に触れるに留め、登録文の全文を繰り返さないこと（利用者は別画面で全文を読める）',
+    '  - 解説文が未登録のとき: 参考名言の一般的な理解の範囲で述べること',
+    '  - 今日のメッセージ「' + moodMessage + '」の気持ちと名言の趣旨を、自然な日本語でつなぐ（無理な比喩は使わない）',
     '',
     '必ず次の JSON のみ返してください（コードブロック・前後の説明文は不要）:',
     '{"quote":"参考にした名言の原文","ichisan":"（必ず ワシ + 〜じゃ語尾）","hiroko":"（必ず あたし + ギャル語）"}',
@@ -1380,7 +1888,7 @@ function callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribu
     payload: JSON.stringify({
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: {
-        temperature: 0.7,
+        temperature: 0.45,
         maxOutputTokens: 2048,
       },
     }),
@@ -1434,6 +1942,16 @@ function callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribu
     return { ok: false, error: 'missing_required_keys' };
   }
 
+  var ichTrim = parsed.ichisan.trim();
+  var hiroTrim = parsed.hiroko.trim();
+  if (!ichTrim || !hiroTrim) {
+    return { ok: false, error: 'empty_dialogue' };
+  }
+  if (section2JpStyleViolates_(ichTrim, hiroTrim)) {
+    Logger.log('[section2] Gemini セリフが品質ルール違反 → テンプレへ');
+    return { ok: false, error: 'jp_style_violation' };
+  }
+
   // 表情ファイル名は GAS 側のテーブルで決定（Gemini に判断させない・SPEC §6.1）
   var avatars = pickAvatarsByPercent_(achievementPercent);
   return {
@@ -1444,15 +1962,15 @@ function callGeminiSection2_(achievementPercent, moodMessage, quoteText, attribu
           ? parsed.quote.trim()
           : quoteText,
       quote_attribution: attribution,
-      ichisan: parsed.ichisan.trim(),
-      hiroko: parsed.hiroko.trim(),
+      ichisan: ichTrim,
+      hiroko: hiroTrim,
       ichisan_image: avatars.ichisan_image,
       hiroko_image: avatars.hiroko_image,
     },
   };
 }
 
-/** §4.4 Quotes: 必須列を検査し active=TRUE・text 非空のみ */
+/** §4.4 Quotes: 必須列を検査し active=TRUE・text 非空のみ。meaning 列があれば読む（LIFF の quote_meaning 用）。 */
 function loadActiveQuotes_(quotesSheet) {
   var rows = quotesSheet.getDataRange().getValues();
   if (rows.length < 2) return [];
@@ -1473,9 +1991,11 @@ function loadActiveQuotes_(quotesSheet) {
     }
     var ord = ixOrder >= 0 ? Number(row[ixOrder]) : r;
     if (isNaN(ord)) ord = r;
+    var ixMeaning = h.indexOf('meaning');
     list.push({
       text: text,
       attribution: h.indexOf('attribution') >= 0 ? String(row[h.indexOf('attribution')] || '').trim() : '',
+      meaning: ixMeaning >= 0 ? String(row[ixMeaning] || '').trim() : '',
       sort_order: ord,
     });
   }
@@ -1501,6 +2021,10 @@ function substituteTemplate_(tpl, vars) {
   out = out.split('{{achievement_percent}}').join(vars.achievement_percent);
   out = out.split('{{mood_message}}').join(vars.mood_message);
   out = out.split('{{attribution}}').join(vars.attribution);
+  out = out.split('{{meaning}}').join(vars.meaning != null && vars.meaning !== undefined ? vars.meaning : '');
+  out = out
+    .split('{{meaning_snippet}}')
+    .join(vars.meaning_snippet != null && vars.meaning_snippet !== undefined ? vars.meaning_snippet : '');
   return out;
 }
 
@@ -1609,7 +2133,7 @@ function setupMasterSheets() {
   ensureDailyRowsForToday_(ss, todayStr, tz);
 
   Logger.log('[setupMasterSheets] 完了（date=' + todayStr + '）。GAS ログで結果を確認してください。');
-  SpreadsheetApp.getActiveSpreadsheet().toast('セットアップ完了', 'やったかい', 5);
+  ss.toast('セットアップ完了', 'やったかい', 5);
 }
 
 /**
@@ -1770,6 +2294,34 @@ function cleanupOldDashTokens(daysToKeep) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) continue;
     if (new Date(dateStr).getTime() < cutoff) {
       props.deleteProperty(key);
+      deleted++;
+    }
+  }
+  // LIFF 不透明 oid（JSON の exp または iat で期限判定。キー末尾は日付ではないため別ループ）
+  var nowMs = Date.now();
+  for (var key2 in all) {
+    if (key2.indexOf(LIFF_OPAQUE_OPEN_PREFIX_) !== 0) continue;
+    var raw2 = props.getProperty(key2);
+    var del = false;
+    try {
+      var o2 = JSON.parse(raw2 || '{}');
+      if (!o2 || o2.v !== 1) {
+        del = true;
+      } else {
+        var exp2 = Number(o2.exp);
+        if (!isNaN(exp2) && exp2 > 0) {
+          if (nowMs > exp2) del = true;
+        } else {
+          var iat2 = Number(o2.iat);
+          if (!isNaN(iat2) && iat2 > 0 && iat2 < cutoff) del = true;
+          else if (isNaN(iat2) || iat2 <= 0) del = true;
+        }
+      }
+    } catch (e2) {
+      del = true;
+    }
+    if (del) {
+      props.deleteProperty(key2);
       deleted++;
     }
   }
@@ -2115,9 +2667,9 @@ function sendWeeklyReviewImpl_(weekStartJst) {
 
   var ss;
   try {
-    ss = SpreadsheetApp.getActiveSpreadsheet();
+    ss = getBoundSpreadsheet_();
   } catch (e0) {
-    Logger.log('[sendWeeklyReview] getActiveSpreadsheet 失敗: ' + String(e0));
+    Logger.log('[sendWeeklyReview] getBoundSpreadsheet_ 失敗: ' + String(e0));
     return linePushTextWeekly_(lineToken, userId, '【やったかい週次】スプレッドシートに接続できませんでした。');
   }
 
@@ -2144,10 +2696,15 @@ function sendWeeklyReviewImpl_(weekStartJst) {
     }
   }
   if (liffUrl) {
-    var q = 'weekStart=' + encodeURIComponent(weekStartJst) + '&token=' + encodeURIComponent(weekToken);
+    var oid = issueWeeklyLiffOpaqueOpen_(weekStartJst, weekToken);
+    var oidEnc = encodeURIComponent(oid);
+    // LIFF が liff.line.me → エンドポイントへ遷移するとき、トップレベルの oid が GAS に届かないことがある。
+    // liff.state に ?oid= を載せておけば parseWebAppQuery_ が st.oid として復元する（LINE 推奨の引き回し経路）。
+    var stateQuery = '?oid=' + oidEnc;
+    var qOpen = 'oid=' + oidEnc + '&liff.state=' + encodeURIComponent(stateQuery);
     var sep = liffUrl.indexOf('?') >= 0 ? '&' : '?';
     lines.push('');
-    lines.push('振り返り: ' + liffUrl + sep + q);
+    lines.push('振り返り: ' + liffUrl + sep + qOpen);
   }
 
   var ok = linePushTextWeekly_(lineToken, userId, lines.join('\n'));
@@ -2174,6 +2731,51 @@ function sendWeeklyReview() {
   withWeeklyLock_(weekStartJst, function () {
     return sendWeeklyReviewImpl_(weekStartJst);
   });
+}
+
+/**
+ * テスト用: 今週分の `sent_week:{月曜}` を削除してから `sendWeeklyReview` を再実行する。
+ *
+ * 通常の `sendWeeklyReview` は 1 週 1 回にロックされるため、既に `sent_week:` が立っていると
+ * `[withWeeklyLock_] 実行済みのためスキップ` となり再送できない。本関数はそのロックだけを明示的に外す。
+ *
+ * **安全装置**: スクリプト プロパティ `ALLOW_WEEKLY_TEST_RESEND` が `true`（大文字小文字無視）のときだけ動作する。
+ * テスト後は **必ずプロパティを削除**すること（本番で常時 true にしないこと）。
+ */
+function resendWeeklyReviewAfterClearingSentWeek() {
+  var props = PropertiesService.getScriptProperties();
+  var allow = (props.getProperty('ALLOW_WEEKLY_TEST_RESEND') || '').trim().toLowerCase();
+  if (allow !== 'true') {
+    throw new Error(
+      'ALLOW_WEEKLY_TEST_RESEND が true ではありません。プロジェクト設定 → スクリプト プロパティで true を設定し、テスト後に削除してください。'
+    );
+  }
+  var todayJst = Utilities.formatDate(new Date(), TZ_, 'yyyy-MM-dd');
+  var weekStartJst = mostRecentMondayJst_(todayJst);
+  var k = 'sent_week:' + weekStartJst;
+  props.deleteProperty(k);
+  Logger.log('[resendWeeklyReviewAfterClearingSentWeek] deleted ' + k + ' → sendWeeklyReview()');
+  sendWeeklyReview();
+}
+
+/**
+ * 週次ロック `sent_week:YYYY-MM-DD` を Script Properties から削除する（テスト・再送前用）。
+ *
+ * Google の「プロジェクトの設定 → スクリプトのプロパティ」は **50 件超**だと一覧に出ない・
+ * **読み取り専用**のため、該当キーはここから削除する。
+ *
+ * - **既定**: `sent_week:2026-05-04` を削除（ログの weekStart と一致させる場合）。
+ * - **別の月曜を消す**: スクリプト プロパティ `SENT_WEEK_DELETE_TARGET` に `yyyy-MM-dd`（その週の月曜）だけを入れてから本関数を実行。試し終わったら `SENT_WEEK_DELETE_TARGET` は削除してよい。
+ */
+function deleteSentWeekForTest() {
+  var props = PropertiesService.getScriptProperties();
+  var datePart = (props.getProperty('SENT_WEEK_DELETE_TARGET') || '').trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) {
+    datePart = '2026-05-04';
+  }
+  var key = 'sent_week:' + datePart;
+  props.deleteProperty(key);
+  Logger.log('[deleteSentWeekForTest] deleted ' + key);
 }
 
 /**
@@ -2224,9 +2826,9 @@ function getWeeklyDashboardJsonForClient(weekStartJst, clientToken) {
   if (!gate.ok) return { ok: false, error: gate.error };
   var ss;
   try {
-    ss = SpreadsheetApp.getActiveSpreadsheet();
+    ss = getBoundSpreadsheet_();
   } catch (err) {
-    return { ok: false, error: 'no_spreadsheet' };
+    return { ok: false, error: 'no_spreadsheet', message: String(err.message || err) };
   }
   try {
     return buildWeeklyDashboardModel_(ss, ws);
@@ -2258,12 +2860,14 @@ function doGetWeekly_(weekStart, tokenParam, format) {
 
   var ss;
   try {
-    ss = SpreadsheetApp.getActiveSpreadsheet();
+    ss = getBoundSpreadsheet_();
   } catch (err) {
     if (format === 'json') {
-      return jsonOutput_({ ok: false, error: 'no_spreadsheet' });
+      return jsonOutput_({ ok: false, error: 'no_spreadsheet', message: String(err.message || err) });
     }
-    return liffHtmlOutput_('<p>スプレッドシートを取得できません。</p>');
+    return liffHtmlOutput_(
+      '<p>スプレッドシートを取得できません。スプレッドシートから <code>ensureSpreadsheetBinding</code> を 1 回実行してください。</p>'
+    );
   }
 
   var model;
@@ -2288,7 +2892,7 @@ function doGetWeekly_(weekStart, tokenParam, format) {
 function htmlWeeklyMessage_(weekStartJst, tokenStr, model) {
   var defaultWeekJson = JSON.stringify(weekStartJst);
   var defaultTokenJson = JSON.stringify(String(tokenStr || ''));
-  var bakedJson = (model && model.ok) ? JSON.stringify(model) : 'null';
+  var bakedJson = (model && model.ok) ? jsonLiteralForScriptTag_(model) : 'null';
 
   var css = [
     '*{box-sizing:border-box;-webkit-tap-highlight-color:transparent;}',
@@ -2319,8 +2923,10 @@ function htmlWeeklyMessage_(weekStartJst, tokenStr, model) {
 
   var js = [
     '(function(){',
-    'var WS=' + defaultWeekJson + ',T=' + defaultTokenJson + ';',
+    'var WS0=' + defaultWeekJson + ',T0=' + defaultTokenJson + ';',
     'var __D__=' + bakedJson + ';',
+    'var qs=new URLSearchParams(window.location.search);',
+    'var WS=(qs.get("weekStart")||"").trim()||WS0,T=(qs.get("token")||"").trim()||T0;',
     'var root=document.getElementById("app"),stEl=document.getElementById("st");',
     'function h(tag,text,cls){var e=document.createElement(tag);if(text!=null)e.textContent=text;if(cls)e.className=cls;return e;}',
     'function sc(c){var s=String(c||"#94A3B8").trim();return/^(#[0-9a-fA-F]{3,8}|rgb[a]?\\([^)]*\\)|[a-zA-Z]{2,30})$/.test(s)?s:"#94A3B8";}',

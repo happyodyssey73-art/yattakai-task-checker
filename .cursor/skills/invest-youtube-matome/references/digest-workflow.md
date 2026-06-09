@@ -26,7 +26,8 @@
 
 ### S4b 凍結（Phase 3）
 
-- `clusters-output-schema.md` に沿い **`clusters[]` と `claim_cards[]` を確定**し、以降は改変しない（誤り修正のみ）。
+- `clusters-output-schema.md` に沿い **`clusters[]` と `claim_cards[]` を確定**し、以降は改変しない（誤り修正のみ）。  
+- 機械側の正規化は `scripts/apply_frozen_gate.mjs`（Phase0 タイトル突合・ゴミ one_liner 差し替え・タグ/クラスタ最大5）。`digest-pipeline.mjs --production` で **ゲート済み凍結** → **`phase7_from_frozen.mjs`** まで一括可能。
 
 ### S5 比較マトリクス
 
@@ -57,6 +58,7 @@
 6. **キャラ対話**: [html-character-dialogue.md](html-character-dialogue.md) に従い **`id="iyt-character-dialogue"`** を必ず入れる（**`iyt-my-strategy` より上**）。台本ルールは [character-usage.md](character-usage.md)・[dialogue-generation-youtube.md](dialogue-generation-youtube.md)。  
 7. **deep 追加**: `index.html`（compact）とは別に **`deep.html`** を生成する。deep は [html-deep-template.md](html-deep-template.md) に従い、**チャンネル順の動画カード**を主役にし、**1動画あたり引用2〜3**（`<span data-iyt-quote="1">`＋`t=`リンク）を付ける。引用できない（`description_only` / `summary_only`）動画は **掲載縮小＋判断保留**に倒す。  
 8. 実装のばらつきを避けるため、HTML生成の指示文は [phase7-html-generation-prompt.md](phase7-html-generation-prompt.md) の **コピペ正本**を使う（断片プロンプトの増殖を禁止）。  
+8b. **機械収集で Phase0 を作る場合**は [phase0-cli.md](phase0-cli.md) の **`digest-pipeline.mjs`（推奨）**で一括実行する（Data API + yt-dlp + 版付き成果物 + 秘密チェックリスト）。  
 9. 長大化する場合のみ `html-long-fallback.md` を検討し、内部メモに理由を1 行。
 
 ### S10 品質ゲート

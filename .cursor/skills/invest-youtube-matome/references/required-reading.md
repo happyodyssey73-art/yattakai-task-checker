@@ -16,7 +16,7 @@
 10. `sources-news.md` — ニュース鮮度・媒体方針  
 11. `market-snapshot.md` — L3 最小セット  
 12. `visual-signal.md` — 二重信号機（`id="iyt-dual-signal"`）  
-12.5. `runbook-youtube-data-api-and-ytdlp.md` — **Phase 0 実行手順**（Data API＋yt-dlpで引用断片を作る）  
+12.5. `phase0-cli.md` — **Phase 0 機械収集 CLI 正本**（Data API＋yt-dlp・検証・HTMLたたき台）／索引: `runbook-youtube-data-api-and-ytdlp.md`  
 13. `html-structure.md` — compact **骨格・CSS**（diagram-maji 型）  
 14. `exemplar.md` — **読み順**・模範ワイヤ  
 15. `html-compact-template.md` — 必須 id・引用・表ルール  

@@ -11,7 +11,7 @@
 | 3 | 田端タカシ | https://www.youtube.com/@tabbata |
 | 4 | 堀江貴文 ホリエモン | https://www.youtube.com/@investor-Horie |
 | 5 | バッちゃま | https://www.youtube.com/@bacchama |
-| 6 | リベラルタ久保 | https://www.youtube.com/@%E3%83%AA%E3%83%99%E3%83%AB%E3%82%BF%E4%B9%85%E4%BF%9D |
+| 6 | リベルタ久保 | https://www.youtube.com/@リベルタ久保 |
 | 7 | invest_study | https://www.youtube.com/@invest_study |
 | 8 | 楽待 | https://www.youtube.com/@rakumachi |
 | 9 | trader-merry | https://www.youtube.com/@trader-merry |
@@ -36,6 +36,7 @@
 
 - 上記固定リストに **存在しない handle / URL は拒否**し、Phase 0-pre でユーザーに訂正を依頼する。  
 - **リスト外のチャンネルを勝手に追加しない**（追加要望はユーザー確認後に本ファイルを更新）。
+- **`{channels_override}` のコピペ事故禁止**: `@nobujuku,https:` のように **URL が2本合体**した行、末尾の **バッククォート `` ` ``**、パーセントエンコードだけを `@` ハンドルにした文字列は渡さない（`scripts/phase0/phase0_make.mjs` は形式A/Bのみ厳密分割する）。
 
 ## 非表示の定義
 

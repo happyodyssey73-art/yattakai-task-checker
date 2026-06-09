@@ -55,7 +55,7 @@ deep.html は **動画の発言（タイムスタンプ引用）に寄せる**�
 ## 欠損時の扱い
 
 - **必須が欠ける・`video_window` が不正** → Phase 0 を **再実行**（同条件でリトライ1回まで推奨）。  
-- バリデーション: `node scripts/validate-phase0-json.mjs --file path/to/saved.json`
+- バリデーション: `node scripts/phase0/validate-phase0-json.mjs --file path/to/saved.json`
 
 ## 返却JSON（構造の正本）
 

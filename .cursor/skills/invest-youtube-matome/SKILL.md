@@ -111,7 +111,7 @@ Phase 8 レビュー: [references/review-prompt.md](references/review-prompt.md)
 | 6 | 市場体温ミニ（compact では最小） | market-snapshot |
 | 7 | HTML（`compact` 既定）。骨格・読み順は [html-structure.md](references/html-structure.md)・[exemplar.md](references/exemplar.md)。**キャラ正本の入口**は [diagram-invest-character-bridge.md](references/diagram-invest-character-bridge.md)。**キャラ短対話**は [html-character-dialogue.md](references/html-character-dialogue.md)（口調・L1/L2/L3 は diagram-invest の `dialogue-generation.md`／`character-voice.md`、差分は dialogue-generation-youtube）。アバター・吹き出しは [character-avatars-compact.md](references/character-avatars-compact.md)（**PNG 既定**・`docs/avatars` からコピー）。必須 `id`: **`iyt-read-path`**・`iyt-executive`・`iyt-dual-signal`・**`iyt-character-dialogue`**・`iyt-my-strategy`（[html-compact-template.md](references/html-compact-template.md)） | html-structure, exemplar, html-compact-template, diagram-invest-character-bridge, html-character-dialogue, character-avatars-compact, character-usage, dialogue-generation-youtube, visual-signal, legal |
 | 8 | 批判的レビュー（readonly サブエージェント推奨） | [review-prompt.md](references/review-prompt.md) に `{path}` `{video_window}` を注入 |
-| 9 | 修正・鮮度・引用・窓外混入の最終確認＋補助スクリプト | quality-checklist, legal、[scripts/check_invest_youtube_matome.mjs](scripts/check_invest_youtube_matome.mjs)、[scripts/validate-phase0-json.mjs](scripts/validate-phase0-json.mjs)（Phase 0 JSON 保存時） |
+| 9 | 修正・鮮度・引用・窓外混入の最終確認＋補助スクリプト | quality-checklist, legal、[scripts/check_invest_youtube_matome.mjs](scripts/check_invest_youtube_matome.mjs)、[scripts/phase0/validate-phase0-json.mjs](scripts/phase0/validate-phase0-json.mjs)（Phase 0 JSON 保存時） |
 | 10 | **毎回 Surge** で閲覧 URL を発行し、完了後 **happyodyssey73@gmail.com** へ通知（補助: [scripts/notify_deploy_complete.mjs](scripts/notify_deploy_complete.mjs)） | [deploy-and-url.md](references/deploy-and-url.md) |
 
 ---
@@ -179,5 +179,5 @@ Phase 8 レビュー: [references/review-prompt.md](references/review-prompt.md)
 - 日次ダイジェストの内部手順全文: [references/digest-workflow.md](references/digest-workflow.md)  
 - Phase 8: [references/review-prompt.md](references/review-prompt.md)  
 - Phase 9 補助（HTML）: `node scripts/check_invest_youtube_matome.mjs --file {生成HTMLのパス}`  
-- Phase 0 JSON 補助: `node scripts/validate-phase0-json.mjs --file {phase0.jsonのパス}`  
+- Phase 0 JSON 補助: `node scripts/phase0/validate-phase0-json.mjs --file {phase0.jsonのパス}`  
 - 全リポジトリ利用: [references/install-global.md](references/install-global.md)

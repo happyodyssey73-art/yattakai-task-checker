@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<!-- iyt-build skill_version=5 generator=phase7_from_frozen.mjs -->
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>投資YouTubeまとめ（Phase7・deep）</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&family=Noto+Sans+JP:wght@400;600;700&display=swap" rel="stylesheet" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <style>
+    :root { --iyt-navy: #0f172a; --iyt-navy-mid: #1e3a5f; --iyt-gold: #854d0e; }
+    body { font-family: 'Noto Sans JP', 'Inter', system-ui, sans-serif; }
+    .iyt-header-gradient {
+      background: linear-gradient(135deg, var(--iyt-navy) 0%, var(--iyt-navy-mid) 45%, var(--iyt-gold) 100%);
+    }
+    .section-card {
+      background: #fff;
+      border-radius: 1rem;
+      box-shadow: 0 1px 3px rgb(0 0 0 / 0.08);
+      border: 1px solid #e2e8f0;
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+    }
+    .iyt-memo-surface {
+      border: 2px dashed #cbd5e1;
+      background: linear-gradient(to bottom, #f8fafc 0%, #f1f5f9 100%);
+    }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+<header class="iyt-header-gradient text-white px-4 py-6" id="iyt-deep-header">
+  <div class="max-w-3xl mx-auto">
+    <p class="text-sm"><a href="index.html" class="underline text-amber-100">← index.html（compact）</a></p>
+    <h1 class="text-2xl font-bold mt-2">deep: 引用つき深掘り</h1>
+    <p class="text-sm mt-2 opacity-95">対象: 直近7日以内 / JST基準 / as_of 2026-05-01T12:00:00+09:00</p>
+    <p class="text-sm mt-2 opacity-90">evidence: official=公式字幕 / auto=自動字幕（誤認識に注意） / desc=説明欄中心</p>
+  </div>
+</header>
+<main class="max-w-3xl mx-auto px-4 py-8">
+  <section class="section-card border-amber-300 bg-amber-50/90" id="iyt-trust-strip" aria-label="信頼情報と限界">
+    <div class="flex items-start gap-3">
+      <div class="shrink-0 w-10 h-10 rounded-lg bg-amber-200 flex items-center justify-center mt-0.5">
+        <i data-lucide="shield-alert" class="w-5 h-5 text-amber-900"></i>
+      </div>
+      <div class="text-sm text-amber-950 leading-relaxed space-y-2">
+        <p><strong>本ページは投資助言ではありません。</strong>投資は<strong>自己責任</strong>です。売買の判断は各動画・公式情報とご自身のルールで行ってください。</p>
+        <p><strong>根拠グレード:</strong> <code>transcript_auto</code>＝自動字幕（<strong>誤認識・欠落</strong>があり得ます）。<code>description_only</code>＝説明欄中心。<code>official</code>＝公式字幕（動画により異なります）。</p>
+        <p><span class="inline-flex items-center rounded-full bg-amber-200 px-2 py-0.5 text-xs font-semibold text-amber-950">Phase7（凍結JSON起点）</span> 本文は <strong>ゲート済み凍結JSON</strong>（タイトル由来のタグ再推定・説明欄ゴミの one_liner 是正・クラスタ最大5）に基づきます。<strong>日経・ロイター等のニュース裏取り</strong>は<strong>未実施</strong>です。一次確認は各動画・公式発表、または読者側の検証で補完してください。</p>
+        <p class="text-xs text-amber-900/80">スキル VERSION: 5</p>
+      </div>
+    </div>
+  </section>
+  <section class="section-card" id="iyt-channel-coverage" aria-label="今回スキップされたチャンネル">
+    <h2 class="text-lg font-bold text-slate-800 mb-2">今回ウィンドウ内に採用動画が無かったチャンネル</h2>
+    <p class="text-sm text-slate-600 mb-3">非表示ではなく、<strong>理由を明示</strong>します（信頼設計）。リストや窓の設定を見直す場合は <code>channels.md</code> / <code>phase0-cli.md</code> を参照してください。</p>
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm border-collapse">
+        <thead><tr class="bg-slate-100">
+          <th class="border border-slate-200 p-2 text-left">channel</th>
+          <th class="border border-slate-200 p-2 text-left">skip_reason</th>
+          <th class="border border-slate-200 p-2 text-left">detail</th>
+        </tr></thead>
+        <tbody><tr><td class="border border-slate-200 p-2 font-mono text-xs">@example</td>
+        <td class="border border-slate-200 p-2 text-sm">no_market_video_in_window</td>
+        <td class="border border-slate-200 p-2 text-xs text-slate-600">—</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+  <section id="iyt-deep-channel-cards" class="space-y-4"><article class="section-card border-amber-100">
+        <h3 class="text-lg font-bold"><a href="https://www.youtube.com/watch?v=abc123def45" class="text-blue-800 underline" target="_blank" rel="noopener">【米国株】テスト用タイトル（ダミー）</a></h3>
+        <p class="text-sm text-slate-500 mt-1">@other / 公開: 2026/4/30 21:00:00 / transcript_auto</p>
+        <p class="text-sm text-slate-700 mt-3"><strong>凍結カードの主張（1件）</strong></p>
+        <ul class="list-disc pl-5 mt-1 space-y-1"><li class="text-sm text-slate-800">金利ピークアウトでハイテクに資金戻りとの見方 <span class="text-xs text-slate-500">(transcript_auto)</span></li></ul>
+        <div class="mt-3"><blockquote class="border-l-4 border-amber-400 pl-3 my-2 text-slate-800"><span data-iyt-quote="1">金利のピークアウトが意識され、ハイテクへ資金が戻るとの見方がある。</span>
+            <div class="mt-1"><a class="text-blue-700 underline text-sm" href="https://www.youtube.com/watch?v=abc123def45&amp;t=10s" target="_blank" rel="noopener">この箇所を動画で開く（t=10s）</a></div></blockquote></div>
+      </article></section>
+  <section class="section-card" id="iyt-deep-clusters">
+    <h2 class="text-lg font-bold mb-2">クラスタ別（凍結）</h2>
+    <ul class="list-disc pl-5"><li class="text-sm text-slate-800"><strong>米国株</strong> — ch: @other / カード数 1</li></ul>
+  </section>
+  <section class="section-card" id="iyt-deep-verify-map">
+    <h2 class="text-lg font-bold mb-2">裏取りマップ（現状）</h2>
+    <ul class="list-disc pl-5 text-sm text-slate-700 space-y-1">
+    <li>各主張 ↔ 主要ニュースの対応表は<strong>未作成</strong>（Phase5 相当）。</li>
+    <li>本 deep は Phase0 字幕引用＋凍結カードの併記まで。</li>
+  </ul>
+  </section>
+  <footer class="section-card text-xs text-slate-600" id="iyt-deep-footer">
+    <p class="mb-2">投資は<strong>自己責任</strong>。本ページは<strong>投資助言ではありません</strong>。自動字幕引用は<strong>誤認識の可能性</strong>があります。</p>
+    <p>動画一覧: <a class="text-blue-700 underline mr-2" href="https://www.youtube.com/watch?v=abc123def45">@other</a></p>
+    <p class="mt-2 text-slate-400">build: invest-youtube-matome skill VERSION 5 / Phase7 from frozen</p>
+  </footer>
+</main>
+<script>lucide.createIcons();</script>
+</body></html>
